@@ -20,7 +20,7 @@ import { QuoteActions } from "./QuoteActions";
 import { quotePublisher } from "./pricingTypes";
 import type { CatalogStatus } from "../../api/types";
 import type { BillingRule, BillingView, PriceQuote } from "./pricingTypes";
-import { nativeAmount } from "./pricingTypes";
+import { nativeAmount, tierCeilingLabel } from "./pricingTypes";
 
 type Target = {
   model: string;
@@ -117,7 +117,7 @@ export function BillingRulePanel({
   // many more there are. The list itself (with the explicit "use as my price"
   // action) is one click away in the evidence area.
   const quoteIsUsable = (quote: PriceQuote) =>
-    quote.status === "calculable" &&
+    (quote.status === "calculable" || quote.status === "tiered") &&
     (!quote.expires_at || new Date(quote.expires_at).getTime() > Date.now());
   const quoteList = quotes.data?.items ?? [];
   // The site this panel belongs to leads, then the other sites, then the model
@@ -383,9 +383,23 @@ function BillingEditor({
   // (inherit/free/explicit) move to the line underneath, where they explain the
   // answer instead of being it.
   const rates = view.effective_rates;
+  const ladder = view.tiers ?? [];
+  const rungText = (tier: (typeof ladder)[number]) =>
+    t("billing.ratesToken", {
+      input: formatUnitPrice(tier.prompt),
+      output: formatUnitPrice(tier.completion),
+    });
   const currentPrice = (() => {
     if (view.effective_state === "unpriced") return t("billing.unpriced");
     if (view.effective_state === "free") return t("billing.free");
+    // A ladder is the price: one line per rung, because no single number is the
+    // whole answer and the request picks the rung.
+    if (ladder.length > 0)
+      return t("billing.currentLadder", {
+        rungs: ladder
+          .map((tier) => `${tierCeilingLabel(tier, t("billing.ladderAbove"))} ${rungText(tier)}`)
+          .join(" · "),
+      });
     const pieces: string[] = [];
     // A per-request-only rule says nothing through token rates, so they are
     // shown only when they are the price (or when they are zero, which is still
@@ -417,6 +431,9 @@ function BillingEditor({
             scope: t(scope === "member" ? "billing.memberScope" : "billing.modelScope"),
             revision,
           })}
+          {rates.multiplier !== 1
+            ? ` · ${t("billing.currentWindow", { multiplier: rates.multiplier })}`
+            : ""}
         </small>
         {/* Two layers, and what a layer is for: the model default prices every
             channel serving this model; a member override exists for the one

@@ -271,8 +271,10 @@ func quoteConversion(q domain.PriceQuoteSnapshot, usdPerUnit *float64) (float64,
 	if q.Unit.Kind == "unknown" {
 		return 0, fmt.Errorf("unknown quote unit cannot be copied")
 	}
-	if q.Status != "calculable" {
-		return 0, fmt.Errorf("quote is not calculable")
+	// A ladder quote is calculable money like any other: the rungs are the
+	// price, and the currency conversion applies to each of them.
+	if q.Status != "calculable" && q.Status != "tiered" {
+		return 0, fmt.Errorf("quote is not calculable: %s", q.Status)
 	}
 	if q.ExpiresAt != "" {
 		expiry, err := time.Parse(time.RFC3339Nano, q.ExpiresAt)
@@ -289,15 +291,13 @@ func quoteConversion(q domain.PriceQuoteSnapshot, usdPerUnit *float64) (float64,
 	return *usdPerUnit, nil
 }
 
-// CopyQuoteRule copies exactly one immutable quote, under a latest-version gate.
-// Future observations do not update the resulting billing rule.
-// A quote is copyable when the operator could rely on it: it must describe a
-// calculable price and must not have expired. "Is it the newest row" is
-// deliberately not part of this check — the copied payload is immutable, the
-// confirmation shows the exact values, and a background refresh must not turn a
-// reviewed quote into a conflict.
+// quoteCopyable accepts a price the operator could rely on: it must describe a
+// calculable price — flat, windowed, or a ladder — and must not have expired.
+// "Is it the newest row" is deliberately not part of this check — the copied
+// payload is immutable, the confirmation shows the exact values, and a
+// background refresh must not turn a reviewed quote into a conflict.
 func quoteCopyable(q domain.PriceQuoteSnapshot) error {
-	if q.Status != "calculable" {
+	if q.Status != "calculable" && q.Status != "tiered" {
 		return fmt.Errorf("quote is not calculable: %s", q.Status)
 	}
 	if q.ExpiresAt != "" {
@@ -308,6 +308,13 @@ func quoteCopyable(q domain.PriceQuoteSnapshot) error {
 	return nil
 }
 
+// CopyQuoteRule copies exactly one immutable quote, under a latest-version gate.
+// Future observations do not update the resulting billing rule.
+//
+// The rule carries the whole price, not just its base: a ladder becomes
+// price_tiers, time windows become price_schedule, and the windows keep the
+// timezone they were published in. Dropping either would bill less than the
+// site charges while the confirmation claimed the price had been copied.
 func (db *DB) CopyQuoteRule(scope, key string, quoteID, expected int64, usdPerUnit *float64) (*domain.BillingRule, error) {
 	q, err := db.PriceQuote(quoteID)
 	if err != nil || q == nil {
@@ -348,7 +355,39 @@ func (db *DB) CopyQuoteRule(scope, key string, quoteID, expected int64, usdPerUn
 	if mode == "fixed" {
 		mode = "request"
 	}
-	r := domain.BillingRule{State: "explicit", Mode: mode, Input: scale(q.Values.Input, 1000), Output: scale(q.Values.Output, 1000), CacheRead: scale(q.Values.CacheRead, 1000), CacheWrite: scale(q.Values.CacheWrite, 1000), PerRequest: scale(q.Values.PerRequest, 1), Timezone: "UTC", Source: "quote_copy", QuoteID: quoteID, USDPerUnit: usdPerUnit}
+	timezone := "UTC"
+	if q.Timezone != "" {
+		timezone = q.Timezone
+	}
+	r := domain.BillingRule{State: "explicit", Mode: mode, Timezone: timezone, Source: "quote_copy", QuoteID: quoteID, USDPerUnit: usdPerUnit}
+	if len(q.Tiers) > 0 {
+		// A ladder is the price. The flat columns stay unset so no reader can
+		// mistake the short-prompt rung for the whole price.
+		//
+		// Quote amounts are per 1M tokens; a rule's rates are per 1k, rungs
+		// included. Copying the rungs without that division overcharges by a
+		// thousand on every request.
+		r.Mode = "token"
+		r.Tiers = make([]domain.PriceTier, len(q.Tiers))
+		for i, tier := range q.Tiers {
+			tier.Prompt *= factor / 1000
+			tier.Completion *= factor / 1000
+			tier.Cache *= factor / 1000
+			tier.PerRequest *= factor
+			r.Tiers[i] = tier
+		}
+	} else {
+		r.Input = scale(q.Values.Input, 1000)
+		r.Output = scale(q.Values.Output, 1000)
+		r.CacheRead = scale(q.Values.CacheRead, 1000)
+		r.CacheWrite = scale(q.Values.CacheWrite, 1000)
+		r.PerRequest = scale(q.Values.PerRequest, 1)
+	}
+	if len(q.Windows) > 0 {
+		// A window is a multiplier on the layer, so it copies as published — but
+		// only with its own timezone, or the hours would mean the gateway's.
+		r.Windows = append([]domain.PriceWindow(nil), q.Windows...)
+	}
 	return db.SaveBillingRule(scope, key, r, expected)
 }
 

@@ -1157,7 +1157,7 @@ func (s *Service) CatalogPrices() (map[string]adapters.PriceQuote, error) {
 		if q.Purpose != "reference" {
 			continue
 		}
-		quote := adapters.PriceQuote{Model: q.Model, Mode: q.Values.Mode, Unit: q.Unit, Currency: q.Unit.Code, CurrencySymbol: defaultCurrencySymbol(q.Unit.Code), QuoteID: q.ID, Status: q.Status, Unparsed: q.Status != "calculable"}
+		quote := adapters.PriceQuote{Model: q.Model, Mode: q.Values.Mode, Unit: q.Unit, Currency: q.Unit.Code, CurrencySymbol: defaultCurrencySymbol(q.Unit.Code), QuoteID: q.ID, Status: q.Status, Unparsed: q.Status == "unsupported", Tiers: q.Tiers, Windows: q.Windows, Timezone: q.Timezone}
 		if q.Values.Input != nil {
 			quote.InputPerMillion = *q.Values.Input
 		}
@@ -1223,13 +1223,17 @@ func priceSamples(siteID, runID int64, observedAt time.Time, snapshot *PriceSnap
 
 // QuoteToMemberPrices converts a normalized quote into the per-1k/per-call units
 // the billing columns use. Returning ok=false keeps a quote that cannot be
-// converted out of the billing layer: an unparsed expression, a missing price,
-// or — the case that matters here — a price in a currency other than USD. The
-// billing columns are dollars per 1k tokens, and writing a ¥ amount into them
-// would silently under- or over-charge every request, so a non-USD quote is
-// simply not adoptable.
+// converted out of those columns: an unparsed expression, a missing price, a
+// price in a currency other than USD, or — added with the expression reader — a
+// price that is a ladder or carries time windows. Those columns hold one flat
+// rate each, so writing only the base would quietly charge less than the site
+// does; the operator can still adopt such a price from 收费设置, which writes a
+// billing rule and can hold both structures.
 func QuoteToMemberPrices(quote adapters.PriceQuote) (prompt, completion, cache, perRequest float64, ok bool) {
 	if quote.Unparsed || quote.Unit.Kind == "site_credit" || quote.Status == "unknown_group" {
+		return 0, 0, 0, 0, false
+	}
+	if len(quote.Tiers) > 0 || len(quote.Windows) > 0 {
 		return 0, 0, 0, 0, false
 	}
 	if currency := strings.ToUpper(strings.TrimSpace(quote.Currency)); currency != "" && currency != "USD" {

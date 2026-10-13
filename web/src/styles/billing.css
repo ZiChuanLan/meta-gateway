@@ -61,6 +61,18 @@
   line-height: 1;
 }
 .quote-source-badge.is-iso { background: var(--surface-subtle); color: var(--muted-strong); }
+/* The structures behind the numbers: the ladder the request picks from, and the
+   windows that scale whatever it picked. */
+.quote-structure { border-top: 1px solid var(--line-light); padding-top: 10px; margin-top: 10px; }
+.quote-structure-title { margin: 0 0 8px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-strong); }
+.quote-ladder, .quote-windows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.quote-ladder li { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; }
+.quote-ladder-ceiling { min-width: 96px; font-size: 12px; color: var(--muted-strong); font-variant-numeric: tabular-nums; }
+.quote-ladder-rates { font-size: 13px; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.quote-windows li { display: flex; gap: 12px; align-items: baseline; font-variant-numeric: tabular-nums; }
+.quote-windows li > span:first-child { font-size: 12px; color: var(--muted-strong); min-width: 128px; }
+.quote-window-multiplier { font-size: 13px; font-weight: 600; color: var(--primary-ink); }
+.quote-structure-hint { margin: 8px 0 0; font-size: 11px; line-height: 1.6; color: var(--muted-strong); }
 .quote-entry-account { color: var(--muted-strong); font-size: 12px; font-variant-numeric: tabular-nums; }
 .quote-entry-kind { color: var(--muted); font-size: 11px; text-transform: none; }
 .quote-entry-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }

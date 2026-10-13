@@ -177,3 +177,87 @@ func TestQuoteCopyRejectsAnotherAccountAtTheSameSite(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A price that is a ladder or carries time windows must copy whole. The flat
+// columns hold one rate each, so a copy that dropped the structure would bill
+// less than the site charges while the confirmation claimed the price had been
+// copied — the two failure modes this checks.
+func TestQuoteCopyCarriesLadderAndWindows(t *testing.T) {
+	db, member, _, _ := adoptFixture(t)
+	key := strconv.FormatInt(member, 10)
+	expiry := time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)
+
+	ladder := domain.PriceQuoteSnapshot{
+		ScopeKey: "site:1:glm-5.2", Model: "glm-5.2", Purpose: "upstream", Source: "site_account",
+		Unit: domain.QuoteUnit{Kind: "iso", Code: "USD"}, Status: "tiered",
+		Timezone: "UTC",
+		Values:   domain.QuoteValues{Mode: "token", Input: rate(2.5), Output: rate(15)},
+		Tiers: []domain.PriceTier{
+			{MaxPromptTokens: 272000, Prompt: 2.5, Completion: 15, Cache: 0.25},
+			{Prompt: 2, Completion: 15, Cache: 0.25},
+		},
+		ExpiresAt: expiry,
+	}
+	id, err := db.SavePriceQuote(ladder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := db.CopyQuoteRule("member", key, id, 0, nil)
+	if err != nil {
+		t.Fatalf("a ladder quote must be copyable: %v", err)
+	}
+	if len(r.Tiers) != 2 {
+		t.Fatalf("rule lost the ladder: %+v", r)
+	}
+	if r.Input != nil || r.Output != nil {
+		t.Fatalf("a ladder rule must not also carry one flat rate: %+v", r)
+	}
+	layer, _, err := db.ResolveBillingLayer("glm-5.2", "", member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The bill picks the rung the site would: at the ceiling the narrow one, one
+	// token past it the open one.
+	if rates := layer.Rates(272000, time.Now()); rates.Input != .0025 {
+		t.Fatalf("at the ceiling: %+v", rates)
+	}
+	if rates := layer.Rates(272001, time.Now()); rates.Input != .002 {
+		t.Fatalf("past the ceiling: %+v", rates)
+	}
+
+	windowed := domain.PriceQuoteSnapshot{
+		ScopeKey: "site:1:glm-5.2:offpeak", Model: "glm-5.2", Purpose: "upstream", Source: "site_account",
+		Unit: domain.QuoteUnit{Kind: "iso", Code: "USD"}, Status: "calculable",
+		Timezone:  "Asia/Shanghai",
+		Values:    domain.QuoteValues{Mode: "token", Input: rate(1), Output: rate(4)},
+		Windows:   []domain.PriceWindow{{FromHour: 1, ToHour: 4, Multiplier: 2}},
+		ExpiresAt: expiry,
+	}
+	id, err = db.SavePriceQuote(windowed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err = db.CopyQuoteRule("member", key, id, r.Revision, nil)
+	if err != nil {
+		t.Fatalf("a windowed quote must be copyable: %v", err)
+	}
+	if r.Timezone != "Asia/Shanghai" {
+		t.Fatalf("the window lost its timezone: %+v", r)
+	}
+	if len(r.Windows) != 1 || r.Windows[0].Multiplier != 2 {
+		t.Fatalf("rule lost the window: %+v", r)
+	}
+	layer, _, err = db.ResolveBillingLayer("glm-5.2", "", member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 02:00 in the quote's own timezone is inside the window; 12:00 is not.
+	inWindow := time.Date(2026, 10, 13, 2, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	if rates := layer.Rates(1000, inWindow); rates.Multiplier != 2 {
+		t.Fatalf("inside the window: %+v", rates)
+	}
+	noon := time.Date(2026, 10, 13, 12, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	if rates := layer.Rates(1000, noon); rates.Multiplier != 1 {
+		t.Fatalf("outside the window: %+v", rates)
+	}
+}

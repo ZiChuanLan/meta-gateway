@@ -35,6 +35,8 @@ export type BillingView = {
     cache_per_1k: number;
     cache_write_per_1k: number;
     per_request: number;
+    /** The time window's multiplier in force right now, from the server clock. */
+    multiplier: number;
     timezone: string;
   };
   tiers?: PriceTier[];
@@ -67,11 +69,37 @@ export type PriceQuote = {
     cache_write_per_million?: number;
     per_request?: number;
   };
+  /**
+   * A published billing expression can carry a ladder (a rung per prompt size)
+   * and time windows (a multiplier during peak hours). The values above stay the
+   * base price; a card that ignores these shows a price the bill will sometimes
+   * exceed.
+   */
+  tiers?: PriceTier[];
+  windows?: PriceWindow[];
+  timezone?: string;
 };
 export function nativeAmount(value: number | undefined, unit: QuoteUnit, creditLabel: string) {
   if (value === undefined || !Number.isFinite(value)) return "—";
   const amount = value.toLocaleString(undefined, { maximumSignificantDigits: 10 });
   return `${amount} ${unit.kind === "iso" ? unit.code : creditLabel}`;
+}
+
+/**
+ * A time window as the operator reads it: "01:00–04:00 ×2", with an end hour of
+ * 0 meaning the band runs to midnight (the one case an hour 0–23 notation needs
+ * care with).
+ */
+export function windowLabel(window: PriceWindow) {
+  const from = String(window.from_hour).padStart(2, "0");
+  const to = window.to_hour === 0 ? "24" : String(window.to_hour).padStart(2, "0");
+  const repeat = window.days?.length ? ` ${window.days.join(",")}` : "";
+  return { range: `${from}:00–${to}:00${repeat}`, multiplier: `×${window.multiplier}` };
+}
+
+/** "Everything up to N tokens", or "everything above the last rung". */
+export function tierCeilingLabel(tier: PriceTier, longerLabel: string) {
+  return tier.max_prompt_tokens > 0 ? `≤ ${tier.max_prompt_tokens.toLocaleString()}` : longerLabel;
 }
 
 /**

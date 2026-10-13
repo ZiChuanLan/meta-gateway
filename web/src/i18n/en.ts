@@ -53,6 +53,17 @@ export const en: Dict = {
   "billing.inherit": "Use the model default",
   "billing.inheritModel": "Leave it unpriced here",
   "billing.moneyMark": "This site quotes in {unit}",
+  "billing.ladderTitle": "Rungs by prompt size",
+  "billing.ladderAbove": "Longer",
+  "billing.ladderHint":
+    "The bill picks a rung by the request's prompt size; each line is a per-1M price.",
+  "billing.windowsTitle": "Time windows ({timezone})",
+  "billing.windowsHint":
+    "Inside a window the multiplier applies; outside it the base price above does.",
+  "billing.currentLadder": "Rungs by prompt size: {rungs}",
+  "billing.currentWindow": "Current window ×{multiplier}",
+  "billing.copyWindows": "It also copies its time windows ({timezone}): {windows}",
+  "billing.copyTiers": "It also copies its rungs: {rungs}",
   "billing.inheritHint":
     "Nothing is priced here, so the model default applies. If that is unset too, the pre-upgrade price keeps being used.",
   "billing.inheritHintModel":

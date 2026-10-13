@@ -135,4 +135,11 @@ type PriceQuoteSnapshot struct {
 	// for display: the snapshot itself only carries the site id, because a site
 	// can be renamed without rewriting stored evidence.
 	SiteName string `json:"site_name,omitempty"`
+	// Tiers and Windows are the two structures a published billing expression can
+	// describe beyond the flat values: a ladder picked by prompt size, and time
+	// windows that scale whatever the ladder chose. A reader that ignores them
+	// shows a price the bill will sometimes exceed.
+	Tiers    []PriceTier   `json:"tiers,omitempty"`
+	Windows  []PriceWindow `json:"windows,omitempty"`
+	Timezone string        `json:"timezone,omitempty"`
 }

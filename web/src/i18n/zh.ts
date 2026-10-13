@@ -51,6 +51,15 @@ export const zh: Dict = {
   "billing.inherit": "用模型默认价",
   "billing.inheritModel": "不在这里定价",
   "billing.moneyMark": "该站点按 {unit} 标价",
+  "billing.ladderTitle": "按输入长度分档",
+  "billing.ladderAbove": "更长",
+  "billing.ladderHint": "账单按请求的输入长度选档，这里每行是每 1M 的价格。",
+  "billing.windowsTitle": "时段倍率（{timezone}）",
+  "billing.windowsHint": "窗口内按时段倍率计费，窗口外按上面的基础价。",
+  "billing.currentLadder": "按输入长度分档：{rungs}",
+  "billing.currentWindow": "当前时段 ×{multiplier}",
+  "billing.copyWindows": "同时拄下它的时段倍率（{timezone}）：{windows}",
+  "billing.copyTiers": "同时拄下它的分档：{rungs}",
   "billing.inheritHint":
     "不在这里单独定价，就按该模型的默认价收。默认价也没设时，继续用升级前的旧价格。",
   "billing.inheritHintModel":

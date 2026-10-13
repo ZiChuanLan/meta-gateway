@@ -21,6 +21,7 @@ const view: BillingView = {
     cache_per_1k: 0.0001,
     cache_write_per_1k: 0.001,
     per_request: 0,
+    multiplier: 1,
     timezone: "UTC",
   },
 };
@@ -348,4 +349,43 @@ it("marks the source the price in force was copied from", async () => {
   withQuote({ ...view, rule: copiedRule, revision: copiedRule.revision });
   render(wrap(<BillingRulePanel model="m" />));
   expect(await screen.findByText("This is what you charge now")).toBeInTheDocument();
+});
+
+it("shows the ladder and the time windows behind a published price", async () => {
+  withQuote(view, [
+    {
+      ...quote,
+      id: 1,
+      site_name: "Elysiver",
+      status: "calculable",
+      timezone: "UTC",
+      windows: [{ days: [], from_hour: 1, to_hour: 4, multiplier: 2 }],
+    },
+    {
+      ...quote,
+      id: 2,
+      site_name: "iMeagicAPI",
+      status: "tiered",
+      values: { mode: "token", input_per_million: 2.5, output_per_million: 15 },
+      tiers: [
+        { max_prompt_tokens: 272000, prompt: 2.5, completion: 15, cache: 0.25, per_request: 0 },
+        { max_prompt_tokens: 0, prompt: 2, completion: 15, cache: 0.25, per_request: 0 },
+      ],
+    },
+  ]);
+  render(wrap(<BillingRulePanel model="m" memberId={17} siteId={4} />));
+  await openEvidence();
+  // The window is evidence the base price is not the whole story.
+  expect(screen.getByText("Time windows (UTC)")).toBeInTheDocument();
+  expect(screen.getByText("01:00–04:00")).toBeInTheDocument();
+  expect(screen.getByText("×2")).toBeInTheDocument();
+  // The ladder replaces the single price line with one rung per size.
+  expect(screen.getByText("Rungs by prompt size")).toBeInTheDocument();
+  expect(screen.getByText("≤ 272,000")).toBeInTheDocument();
+  expect(screen.getByText("Longer")).toBeInTheDocument();
+  // Both are adoptable: a ladder is a price the gateway can bill, unlike an
+  // expression it could not read.
+  const copyButtons = [...document.querySelectorAll(".quote-entry-actions button")];
+  expect(copyButtons).toHaveLength(2);
+  for (const button of copyButtons) expect(button).toBeEnabled();
 });

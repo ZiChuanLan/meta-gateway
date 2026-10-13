@@ -50,6 +50,14 @@ type PriceQuote struct {
 	QuoteID       int64            `json:"quote_id,omitempty"`
 	Status        string           `json:"status,omitempty"`
 	UpstreamGroup string           `json:"upstream_group,omitempty"`
+	// Tiers and Windows carry the two structures a published billing expression
+	// may describe on top of the flat amounts: a ladder chosen by prompt size,
+	// and time windows that scale the result. The amounts above stay the base
+	// price; a caller that ignores these fields shows a price the bill will
+	// sometimes exceed.
+	Tiers    []domain.PriceTier   `json:"tiers,omitempty"`
+	Windows  []domain.PriceWindow `json:"windows,omitempty"`
+	Timezone string               `json:"timezone,omitempty"`
 }
 
 // BillingCoefs are the per-1M USD coefficients of a tiered billing expression.
@@ -75,58 +83,22 @@ var billingVariables = map[string]int{
 	"cw": 3,
 }
 
-// ParseBillingExpr parses the single-tier additive form of a New-API billing
-// expression, e.g.
+// ParseBillingExpr reads only the per-1M coefficients of a published expression,
+// for callers that want the plain numbers and nothing else. The coefficients are
+// already in the site's currency per 1M tokens, verified against an independent
+// public aggregator's published price for the same site and model (0.15 / 0.5 /
+// 0.03) and against the variables' meaning (prompt / completion / cache read).
 //
-//	tier("base", p * 0.15 + c * 0.5 + cr * 0.03)
-//
-// into per-1M USD coefficients. The coefficients are already USD per 1M tokens:
-// verified against an independent public aggregator's published price for the
-// same site and model (0.15 / 0.5 / 0.03), and against the variables' meaning
-// (prompt / completion / cache-read).
-//
-// Anything else — multiple tiers, unknown variables, arithmetic we do not
-// model — returns false, and the caller must surface the raw expression instead
-// of inventing a number.
+// It refuses an expression that carries a ladder or a time window: those change
+// what a request costs, so a caller that cannot carry them must not be handed
+// the base alone. ParseBillingExpression is the full reader; anything it cannot
+// map exactly has to be surfaced as raw text rather than as an invented number.
 func ParseBillingExpr(raw string) (BillingCoefs, bool) {
-	expr := strings.TrimSpace(raw)
-	if expr == "" {
+	parsed, ok := ParseBillingExpression(raw)
+	if !ok || len(parsed.Tiers) > 0 || len(parsed.Windows) > 0 {
 		return BillingCoefs{}, false
 	}
-	body, ok := singleTierBody(expr)
-	if !ok {
-		return BillingCoefs{}, false
-	}
-	// Any parenthesized sub-expression (a nested call, a multiplication by a
-	// grouped sum) is outside the grammar we can evaluate honestly.
-	if strings.Contains(body, "(") {
-		return BillingCoefs{}, false
-	}
-	var coefs BillingCoefs
-	slots := [4]*float64{&coefs.Prompt, &coefs.Completion, &coefs.CacheRead, &coefs.CacheWrite}
-	found := false
-	for _, term := range strings.Split(body, "+") {
-		variable, number, ok := parseBillingTerm(term)
-		if !ok {
-			return BillingCoefs{}, false
-		}
-		slot, known := billingVariables[variable]
-		if !known {
-			return BillingCoefs{}, false
-		}
-		*slots[slot] += number
-		switch slot {
-		case 2:
-			coefs.HasCacheRead = true
-		case 3:
-			coefs.HasCacheWrite = true
-		}
-		found = true
-	}
-	if !found {
-		return BillingCoefs{}, false
-	}
-	return coefs, true
+	return parsed.Coefs, true
 }
 
 // singleTierBody returns the body of `tier("<label>", <body>)`, requiring the
@@ -203,13 +175,30 @@ func NormalizePrice(item ModelPrice, quotaPerUnit int64) (PriceQuote, bool) {
 	if expr := strings.TrimSpace(item.BillingExpr); expr != "" {
 		quote.Mode = "token"
 		quote.Raw = expr
-		if coefs, parsed := ParseBillingExpr(expr); parsed {
-			quote.InputPerMillion = coefs.Prompt * groupRatio
-			quote.OutputPerMillion = coefs.Completion * groupRatio
-			quote.CacheReadPerMillion = coefs.CacheRead * groupRatio
-			quote.CacheWritePerMillion = coefs.CacheWrite * groupRatio
-			quote.HasCacheRead = coefs.HasCacheRead
-			quote.HasCacheWrite = coefs.HasCacheWrite
+		if parsed, ok := ParseBillingExpression(expr); ok {
+			quote.Windows = parsed.Windows
+			quote.Timezone = parsed.Timezone
+			if len(parsed.Tiers) > 0 {
+				// A ladder has no single price. The rungs are the price, and the
+				// amounts below describe the shortest-prompt rung so a reader that
+				// ignores Tiers still shows a number the site really publishes.
+				quote.Tiers = scaleTiers(parsed.Tiers, groupRatio)
+				base := shortestRung(parsed.Tiers)
+				quote.InputPerMillion = base.Prompt * groupRatio
+				quote.OutputPerMillion = base.Completion * groupRatio
+				quote.CacheReadPerMillion = base.Cache * groupRatio
+				quote.HasCacheRead = base.Cache > 0
+				// "tiered" is not "unreadable": the price is calculable, it just
+				// depends on the prompt size, and the console must say so.
+				quote.Status = "tiered"
+				return quote, true
+			}
+			quote.InputPerMillion = parsed.Coefs.Prompt * groupRatio
+			quote.OutputPerMillion = parsed.Coefs.Completion * groupRatio
+			quote.CacheReadPerMillion = parsed.Coefs.CacheRead * groupRatio
+			quote.CacheWritePerMillion = parsed.Coefs.CacheWrite * groupRatio
+			quote.HasCacheRead = parsed.Coefs.HasCacheRead
+			quote.HasCacheWrite = parsed.Coefs.HasCacheWrite
 			return quote, true
 		}
 		quote.Unparsed = true
@@ -260,6 +249,41 @@ func NormalizePrice(item ModelPrice, quotaPerUnit int64) (PriceQuote, bool) {
 		return quote, false
 	}
 	return quote, true
+}
+
+// scaleTiers applies the group ratio to every rung. The ratio is the user
+// group's multiplier, not a time or size rule, so it applies uniformly.
+func scaleTiers(tiers []domain.PriceTier, groupRatio float64) []domain.PriceTier {
+	if groupRatio == 1 || len(tiers) == 0 {
+		return tiers
+	}
+	out := make([]domain.PriceTier, len(tiers))
+	for i, tier := range tiers {
+		tier.Prompt *= groupRatio
+		tier.Completion *= groupRatio
+		tier.Cache *= groupRatio
+		tier.PerRequest *= groupRatio
+		out[i] = tier
+	}
+	return out
+}
+
+// shortestRung is the rung a short request pays: the smallest explicit ceiling,
+// or the only rung when the ladder is open-ended.
+func shortestRung(tiers []domain.PriceTier) domain.PriceTier {
+	if len(tiers) == 0 {
+		return domain.PriceTier{}
+	}
+	chosen := tiers[0]
+	for _, tier := range tiers[1:] {
+		if tier.MaxPromptTokens == 0 {
+			continue
+		}
+		if chosen.MaxPromptTokens == 0 || tier.MaxPromptTokens < chosen.MaxPromptTokens {
+			chosen = tier
+		}
+	}
+	return chosen
 }
 
 // declaredFixed reports whether the row declares per-call billing: the parser

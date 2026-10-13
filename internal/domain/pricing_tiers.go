@@ -159,7 +159,7 @@ func ScheduleMultiplier(windows []PriceWindow, at time.Time) float64 {
 	}
 	hour := at.Hour()
 	for _, window := range windows {
-		if !window.coversDay(weekday) || !window.coversHour(hour) {
+		if !window.coversDay(weekday) || !window.CoversHour(hour) {
 			continue
 		}
 		return window.Multiplier
@@ -179,7 +179,11 @@ func (w PriceWindow) coversDay(weekday int) bool {
 	return false
 }
 
-func (w PriceWindow) coversHour(hour int) bool {
+// coversHour reports whether the hour is inside the band. Exported as
+// CoversHour for the one other caller that has to know: reading a published
+// billing expression into windows, which must refuse two bands that overlap
+// because the site multiplies them and this scheduler takes the first match.
+func (w PriceWindow) CoversHour(hour int) bool {
 	if w.FromHour == w.ToHour {
 		return true // the whole day
 	}

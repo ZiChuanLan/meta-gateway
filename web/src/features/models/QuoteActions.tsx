@@ -4,7 +4,14 @@ import { ApiError } from "../../api/client";
 import { Button, Dialog, ErrorState, Field } from "../../components/ui";
 import { useSession } from "../../session";
 import { useI18n } from "../../i18n";
-import { nativeAmount, quotePublisher, type BillingView, type PriceQuote } from "./pricingTypes";
+import {
+  nativeAmount,
+  quotePublisher,
+  tierCeilingLabel,
+  windowLabel,
+  type BillingView,
+  type PriceQuote,
+} from "./pricingTypes";
 
 type CopyTarget = { scope: string; key: string; revision: number };
 
@@ -44,7 +51,9 @@ export function QuoteActions({
   >(null);
   const [conversion, setConversion] = useState("");
   const expired = Boolean(quote.expires_at && new Date(quote.expires_at).getTime() <= Date.now());
-  const calculable = quote.status === "calculable" && !expired;
+  // "tiered" is a price the gateway can bill (the ladder below is the price);
+  // only "unsupported" is the case where it has no number to offer.
+  const calculable = (quote.status === "calculable" || quote.status === "tiered") && !expired;
   const values = quote.values;
   const amount = (value?: number) => nativeAmount(value, quote.unit, t("billing.credit"));
   const quoteFields = [
@@ -95,7 +104,7 @@ export function QuoteActions({
       ] as const)
     : [];
   const copyCalculable =
-    copyTarget?.quote.status === "calculable" &&
+    (copyTarget?.quote.status === "calculable" || copyTarget?.quote.status === "tiered") &&
     (!copyTarget.quote.expires_at || new Date(copyTarget.quote.expires_at).getTime() > Date.now());
   return (
     <article className="quote-entry">
@@ -152,6 +161,48 @@ export function QuoteActions({
             </div>
           ))}
       </dl>
+      {/* The structures behind the numbers, when the site published any. A ladder
+          replaces the single price line; time windows scale whatever the base
+          is, so they are listed with the timezone they were written in. */}
+      {calculable && quote.tiers?.length ? (
+        <div className="quote-structure">
+          <p className="quote-structure-title">{t("billing.ladderTitle")}</p>
+          <ul className="quote-ladder">
+            {quote.tiers.map((tier, index) => (
+              <li key={index}>
+                <span className="quote-ladder-ceiling">
+                  {tierCeilingLabel(tier, t("billing.ladderAbove"))}
+                </span>
+                <span className="quote-ladder-rates">
+                  {amount(tier.prompt)}
+                  {tier.completion > 0 ? ` · ${amount(tier.completion)}` : ""}
+                  {tier.cache > 0 ? ` · ${amount(tier.cache)}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="quote-structure-hint">{t("billing.ladderHint")}</p>
+        </div>
+      ) : null}
+      {calculable && quote.windows?.length ? (
+        <div className="quote-structure">
+          <p className="quote-structure-title">
+            {t("billing.windowsTitle", { timezone: quote.timezone || "UTC" })}
+          </p>
+          <ul className="quote-windows">
+            {quote.windows.map((window, index) => {
+              const label = windowLabel(window);
+              return (
+                <li key={index}>
+                  <span>{label.range}</span>
+                  <span className="quote-window-multiplier">{label.multiplier}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="quote-structure-hint">{t("billing.windowsHint")}</p>
+        </div>
+      ) : null}
       {target ? (
         <div className="quote-entry-actions">
           <Button
@@ -243,6 +294,30 @@ export function QuoteActions({
               </tbody>
             </table>
           </div>
+          {/* The confirmation must name everything the rule will carry, or an
+              operator confirms one price and gets a different bill. */}
+          {copyTarget.quote.windows?.length ? (
+            <p role="status" className="panel-hint">
+              {t("billing.copyWindows", {
+                timezone: copyTarget.quote.timezone || "UTC",
+                windows: copyTarget.quote.windows
+                  .map((window) => {
+                    const label = windowLabel(window);
+                    return `${label.range} ${label.multiplier}`;
+                  })
+                  .join(" · "),
+              })}
+            </p>
+          ) : null}
+          {copyTarget.quote.tiers?.length ? (
+            <p role="status" className="panel-hint">
+              {t("billing.copyTiers", {
+                rungs: copyTarget.quote.tiers
+                  .map((tier) => tierCeilingLabel(tier, t("billing.ladderAbove")))
+                  .join(" / "),
+              })}
+            </p>
+          ) : null}
           {copy.isError ? (
             copy.error instanceof ApiError && copy.error.status === 409 ? (
               <p role="alert" className="inline-error">
