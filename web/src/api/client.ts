@@ -694,15 +694,17 @@ export const api = (client: ApiClient) => ({
   /**
    * External site probe data joined with our routes. The policy travels as
    * query parameters so the dialog can preview a different threshold before
-   * anything is saved or applied.
+   * anything is saved or applied; siteId scopes the read to the site the panel
+   * is showing, which is what keeps the page load cheap.
    */
-  siteProbeReport: (policy: SiteProbePolicy, signal?: AbortSignal) => {
+  siteProbeReport: (policy: SiteProbePolicy, siteId?: number, signal?: AbortSignal) => {
     const query = new URLSearchParams({
       ratio_threshold: String(policy.ratio_threshold),
       min_samples: String(policy.min_samples),
       low_rounds: String(policy.low_rounds),
       high_rounds: String(policy.high_rounds),
     });
+    if (siteId) query.set("site_id", String(siteId));
     return client.get<SiteProbeReport>(`/admin/site-probe/report?${query}`, signal);
   },
   /** Collect now: one site when ids are given, every enabled site otherwise. */

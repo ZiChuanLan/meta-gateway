@@ -96,9 +96,20 @@ export function SiteObservationWorkspace({
     queryKey: ["runtime-settings"],
     queryFn: ({ signal }) => service.runtimeSettings(signal),
   });
+  const selected =
+    (observations.data?.sites ?? []).find((item) => item.site_id === selectedId) ??
+    observations.data?.sites[0];
+  /* One site's route links, not the whole fleet's. The report is the expensive
+     read in this panel (every collected sample is a candidate), and it used to
+     be keyed by the draft policy below, so typing a threshold fired a fresh
+     fleet-wide round of it. The verdict fields it computes are not rendered
+     here — the policy preview goes through its own dry-run call — so the query
+     is keyed by the site alone and fetched with that site's saved policy. */
   const report = useQuery({
-    queryKey: ["site-probe", policy],
-    queryFn: ({ signal }) => service.siteProbeReport(policy, signal),
+    queryKey: ["site-probe", selected?.site_id ?? 0],
+    enabled: Boolean(selected?.site_id),
+    queryFn: ({ signal }) =>
+      service.siteProbeReport(selected?.policy ?? DEFAULT_POLICY, selected?.site_id, signal),
   });
   const [routeRowsOpen, setRouteRowsOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -241,11 +252,9 @@ export function SiteObservationWorkspace({
     );
   // Route names are global: a name that is already routed anywhere cannot be
   // created again (the API answers 409), so adoption is only offered for names
-  // nobody routes yet — whether or not this site is the one serving them.
-  const routedNames = new Set([
-    ...(report.data?.rows ?? []).map((row) => row.route),
-    ...(report.data?.name_only ?? []).map((row) => row.route),
-  ]);
+  // nobody routes yet — whether or not this site is the one serving them. The
+  // report carries that list itself, because its rows are scoped to one site.
+  const routedNames = new Set(report.data?.routes ?? []);
 
   const collect = useAdminMutation({
     mutationFn: (ids?: number[]) => service.siteProbeCollect(ids),
@@ -303,9 +312,6 @@ export function SiteObservationWorkspace({
     upstreamModel: string;
     channelName?: string;
   } | null>(null);
-  const selected =
-    (observations.data?.sites ?? []).find((item) => item.site_id === selectedId) ??
-    observations.data?.sites[0];
   const previewKey = JSON.stringify([selected?.site_id, policy, report.dataUpdatedAt]);
   const previewKeyRef = useRef(previewKey);
   previewKeyRef.current = previewKey;

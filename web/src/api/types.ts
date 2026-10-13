@@ -838,6 +838,12 @@ export interface SiteProbeSiteStatus {
 export interface SiteProbeReport {
   policy: SiteProbePolicy;
   rows: SiteProbeRow[];
+  /**
+   * Every enabled route pattern. Global on purpose: the panel only offers
+   * "attach" for a name no route carries yet, and the report itself may be
+   * scoped to one site.
+   */
+  routes: string[];
   unmatched: SiteProbeUnmatched[];
   /**
    * Models a site publishes whose name matches one of our routes, but that

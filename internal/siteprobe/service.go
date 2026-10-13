@@ -253,8 +253,13 @@ type SiteStatus struct {
 
 // Report is what the model-page tool renders.
 type Report struct {
-	Policy      Policy       `json:"policy"`
-	Rows        []Row        `json:"rows"`
+	Policy Policy `json:"policy"`
+	Rows   []Row  `json:"rows"`
+	// Routes lists every enabled route pattern, whether or not this report's
+	// sites serve it. The console gates "attach this model" on "no route carries
+	// this name yet", and that question is global: a site-scoped report would
+	// otherwise offer to create a route that already exists (409).
+	Routes      []string     `json:"routes"`
 	Unmatched   []Unmatched  `json:"unmatched"`
 	NameOnly    []NameOnly   `json:"name_only"`
 	Sites       []SiteStatus `json:"sites"`
@@ -486,6 +491,16 @@ func resolveProbeSource(site domain.Site) domain.Site {
 // Report builds the tool's view: every (route × site) reading we have, plus the
 // monitored models that match no route and each site's collection state.
 func (s *Service) Report(policy Policy) (*Report, error) {
+	return s.ReportForSites(policy, nil)
+}
+
+// ReportForSites is Report restricted to the given sites; an empty selection is
+// every site. The expensive half of the report is one row per (site, model)
+// sample in the retention window, so a caller that knows which site it is
+// looking at — the console's observation panel, the auto-apply pass — must say
+// so: reading the whole fleet to render one site is what made the panel cost
+// seconds of CPU per page load.
+func (s *Service) ReportForSites(policy Policy, siteIDs []int64) (*Report, error) {
 	policy = policy.withDefaults()
 	now := s.now()
 	resolver, err := BuildResolver(s.db)
@@ -496,11 +511,24 @@ func (s *Service) Report(policy Policy) (*Report, error) {
 	if err != nil {
 		return nil, err
 	}
+	if len(siteIDs) > 0 {
+		wanted := make(map[int64]bool, len(siteIDs))
+		for _, id := range siteIDs {
+			wanted[id] = true
+		}
+		kept := sites[:0]
+		for _, site := range sites {
+			if wanted[site.ID] {
+				kept = append(kept, site)
+			}
+		}
+		sites = kept
+	}
 	siteNames := make(map[int64]string, len(sites))
 	for _, site := range sites {
 		siteNames[site.ID] = site.Name
 	}
-	samplesBySite, err := s.db.ListRecentSamplesBySite(max(policy.LowRounds, policy.HighRounds, 3))
+	samplesBySite, err := s.db.ListRecentSamplesBySite(max(policy.LowRounds, policy.HighRounds, 3), siteIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -535,7 +563,7 @@ func (s *Service) Report(policy Policy) (*Report, error) {
 	// thing that survives every test (they all have data) and crashes the
 	// first real empty view.
 	report := &Report{
-		Policy: policy, GeneratedAt: now,
+		Policy: policy, GeneratedAt: now, Routes: append([]string{}, resolver.patterns...),
 		Rows: []Row{}, Unmatched: []Unmatched{}, NameOnly: []NameOnly{}, Sites: []SiteStatus{},
 	}
 	seenUnmatched := make(map[string]bool)
@@ -1008,7 +1036,11 @@ type ApplyRequest struct {
 // an operator disabled by hand is never recovered.
 func (s *Service) Apply(ctx context.Context, req ApplyRequest) ([]Action, error) {
 	policy := req.Policy.withDefaults()
-	report, err := s.Report(policy)
+	// The site selection scopes the read as well as the actions: an apply for one
+	// site has no use for the other sites' samples, and reading them is the
+	// expensive part (the scheduled pass groups sites by policy precisely so it
+	// does not have to repeat this work).
+	report, err := s.ReportForSites(policy, req.SiteIDs)
 	if err != nil {
 		return nil, err
 	}

@@ -268,16 +268,40 @@ func (db *DB) ListRecentSiteProbeSamples(siteID int64, rounds int) ([]SiteProbeS
 	return out, rows.Err()
 }
 
+// siteFilterClause renders ` AND s.site_id IN (?,?)` for a site-scoped probe
+// read, with the placeholders in the returned args. An empty selection means
+// every site, which is what the scheduled pass and the fleet-wide view want.
+func siteFilterClause(siteIDs []int64) (string, []any) {
+	if len(siteIDs) == 0 {
+		return "", []any{SiteProbeRunOK}
+	}
+	marks := make([]string, 0, len(siteIDs))
+	args := make([]any, 0, len(siteIDs)+1)
+	args = append(args, SiteProbeRunOK)
+	for _, id := range siteIDs {
+		marks = append(marks, "?")
+		args = append(args, id)
+	}
+	return "\n AND s.site_id IN (" + strings.Join(marks, ",") + ")", args
+}
+
 // ListRecentSamplesBySite returns the last `rounds` successful rounds of every
 // monitored model on every site, keyed by site id — the model-page tool needs
 // "this model across all sites" and one query per site would be a fan-out.
 // The window partitions by (site, model): partitioning by site alone would let
 // one round's other monitors push a model's older rounds out of the window,
 // which is exactly the history the consecutive-rounds verdict needs.
-func (db *DB) ListRecentSamplesBySite(rounds int) (map[int64][]SiteProbeSample, error) {
+//
+// siteIDs narrows the read to specific sites. The console's observation panel
+// shows one site at a time, and this query is the expensive one in the report
+// (every sample row of the retention window is a candidate), so the caller that
+// knows which site it is looking at must be able to say so.
+func (db *DB) ListRecentSamplesBySite(rounds int, siteIDs []int64) (map[int64][]SiteProbeSample, error) {
 	if rounds <= 0 {
 		rounds = 3
 	}
+	filter, args := siteFilterClause(siteIDs)
+	args = append(args, rounds)
 	rows, err := db.Query(`SELECT `+siteProbeSampleColumns+` FROM (
 			SELECT s.id, s.run_id, s.site_id, s.monitor_id, s.monitor_name, s.monitor_type, s.group_name, s.raw_model, s.observed_at,
 				s.samples, s.up_count, s.ratio, s.avg_ping_ms, s.weak_evidence,
@@ -288,8 +312,8 @@ func (db *DB) ListRecentSamplesBySite(rounds int) (map[int64][]SiteProbeSample, 
 			JOIN site_probe_runs r ON r.id = s.run_id AND r.status = ?
  WHERE EXISTS (SELECT 1 FROM site_probe_samples current WHERE current.site_id=s.site_id
  AND current.run_id=(SELECT MAX(id) FROM site_probe_runs WHERE site_id=s.site_id AND status='ok')
- AND current.raw_model=s.raw_model AND current.monitor_id=s.monitor_id AND current.group_name=s.group_name AND current.source_key=s.source_key)
-		) WHERE rn <= ? ORDER BY site_id, raw_model, run_id DESC`, SiteProbeRunOK, rounds)
+ AND current.raw_model=s.raw_model AND current.monitor_id=s.monitor_id AND current.group_name=s.group_name AND current.source_key=s.source_key)`+filter+`
+		) WHERE rn <= ? ORDER BY site_id, raw_model, run_id DESC`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("site probe: recent samples by site: %w", err)
 	}

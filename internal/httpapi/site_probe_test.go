@@ -109,6 +109,9 @@ type siteProbeReport struct {
 		LastRunStatus    string `json:"last_run_status"`
 		ProbeSourceError string `json:"probe_last_error"`
 	} `json:"sites"`
+	// Routes is every enabled route pattern, independent of which sites the
+	// report was scoped to.
+	Routes []string `json:"routes"`
 }
 
 type siteProbeApplyResponse struct {
@@ -321,6 +324,19 @@ func readReport(t *testing.T, baseURL string) siteProbeReport {
 	var report siteProbeReport
 	json.Unmarshal(get(t, baseURL+"/admin/site-probe/report"), &report)
 	return report
+}
+
+func getStatus(t *testing.T, url string) int {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer admin-test")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.ReadAll(resp.Body)
+	return resp.StatusCode
 }
 
 func deleteStatus(t *testing.T, url string) int {
@@ -773,5 +789,67 @@ func TestSiteProbePerSiteCollectResolvesAutoSource(t *testing.T) {
 	// The resolved source is what ran, so the run names it.
 	if collect.Runs[0].SourceKind != "newapi" {
 		t.Fatalf("source kind = %q, want the derived newapi", collect.Runs[0].SourceKind)
+	}
+}
+
+// The console's observation panel reads ONE site's report, because building the
+// rows means walking every collected sample in the retention window — the read
+// that used to cost seconds of CPU per page load across the whole fleet. The
+// endpoint therefore has to honour site_id (and refuse nonsense instead of
+// silently answering with everything).
+func TestSiteProbeReportScopesToTheRequestedSite(t *testing.T) {
+	dataDir := t.TempDir()
+	db, _ := store.OpenTest(dataDir)
+	defer db.Close()
+	enc, _ := crypto.New("site-probe-test-master-key-32-ch!")
+	cfg := &config.Config{AdminToken: "admin-test", MetricsToken: "metrics-test", BackupDir: filepath.Join(dataDir, "backups"), MaxAdminBodyBytes: 1 << 20, AuditRetentionDays: 90, AuditRetentionRows: 100000, Cooldown: time.Second}
+	server := httptest.NewServer(httpapi.NewTestRouter(t, cfg, db, enc))
+	defer server.Close()
+
+	var up, down atomic.Int64
+	up.Store(3)
+	down.Store(7)
+	kuma := kumaStub(t, &up, &down, "z-ai/glm-5.2")
+
+	var site struct{ ID int64 }
+	json.Unmarshal(post(t, server.URL+"/admin/sites", map[string]any{"name": "scoped", "base_url": "https://scoped.example", "platform": "new-api", "status": "enabled"}), &site)
+	var cred struct{ ID int64 }
+	json.Unmarshal(post(t, server.URL+"/admin/sites/"+itoa(site.ID)+"/credentials", map[string]any{"kind": "api_key", "secret": "sk-test", "status": "enabled"}), &cred)
+	var channel struct{ ID int64 }
+	json.Unmarshal(post(t, server.URL+"/admin/channels", map[string]any{"site_id": site.ID, "credential_id": cred.ID, "name": "scoped-key", "base_url": "https://scoped.example", "type_hint": "new-api", "status": "enabled"}), &channel)
+	var route struct {
+		ID           int64
+		ModelPattern string `json:"model_pattern"`
+	}
+	json.Unmarshal(post(t, server.URL+"/admin/routes", map[string]any{"model_pattern": "z-ai/glm-5.2", "enabled": true}), &route)
+	post(t, server.URL+"/admin/routes/"+itoa(route.ID)+"/members", map[string]any{"channel_id": channel.ID, "enabled": true, "auto": true, "weight": 100})
+	json.Unmarshal(putJSON(t, server.URL+"/admin/site-probe/source", map[string]any{"site_id": site.ID, "kind": "uptime_kuma", "url": kuma.URL + "/status/ai", "enabled": true}), &struct{}{})
+	post(t, server.URL+"/admin/site-probe/collect", map[string]any{"site_ids": []int64{site.ID}})
+
+	var scoped siteProbeReport
+	json.Unmarshal(get(t, server.URL+"/admin/site-probe/report?site_id="+itoa(site.ID)), &scoped)
+	if len(scoped.Rows) == 0 {
+		t.Fatal("scoped report returned no rows for the site that has them")
+	}
+	// The route list travels with a scoped report: the panel only offers
+	// "attach" for a name no route carries yet, and that question is global.
+	found := false
+	for _, pattern := range scoped.Routes {
+		if pattern == route.ModelPattern {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("routes = %v, want the enabled route %q", scoped.Routes, route.ModelPattern)
+	}
+
+	var elsewhere siteProbeReport
+	json.Unmarshal(get(t, server.URL+"/admin/site-probe/report?site_id=9999"), &elsewhere)
+	if len(elsewhere.Rows) != 0 || len(elsewhere.Sites) != 0 {
+		t.Fatalf("report for another site = %d rows / %d sites, want nothing", len(elsewhere.Rows), len(elsewhere.Sites))
+	}
+
+	if status := getStatus(t, server.URL+"/admin/site-probe/report?site_id=nonsense"); status != http.StatusBadRequest {
+		t.Fatalf("report with a nonsense site_id = %d, want 400", status)
 	}
 }

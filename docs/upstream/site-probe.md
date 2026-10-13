@@ -38,6 +38,11 @@
 **绝不写 `model_health` / `probe_results`**——那两张表的含义是「真的发过一次生成请求」。混进去会让「这个渠道上次成功是什么时候」这个问题失去意义。
 
 > `site_probe_samples` 是**全库写入量最大的历史表**：一轮 = 站点 × 模型 一行。所以它的保留期（默认 7 天）要刻意给值。
+>
+> 读侧按同一个量级设计：报告必须**按站点取用**（`GET /admin/site-probe/report?site_id=N`），
+> 而每个样本的分区探测由 `idx_site_probe_samples_partition` 覆盖索引回答。2026-10-14 在
+> 21.4 万样本的生产库上实测：全舰队读一次 **9.9s CPU**（控制台每开一次面板、改一次阈值就触发一次，
+> 直接把 2 核机器打满）；按站点取用 + 覆盖索引后 **0.30s**。
 
 ## 三、采集节奏
 
@@ -119,7 +124,7 @@
 
 | 接口 | 作用 |
 | :--- | :--- |
-| `GET /admin/site-probe/report` | 读数表（站点自报可用率、匹配方式、连续轮数、判定、受影响成员） |
+| `GET /admin/site-probe/report` | 读数表（站点自报可用率、匹配方式、连续轮数、判定、受影响成员）。**控制台按站点分页取用**：带 `site_id=N` 时只读该站点的样本与状态，`routes` 字段始终是全部启用路由名（「能不能挂载」这个问题是全局的） |
 | `PUT /admin/site-probe/source` | 保存站点源 |
 | `DELETE /admin/site-probe/source/{siteId}` | 清除站点源 |
 | `POST /admin/site-probe/detect` | 识别站点平台 |

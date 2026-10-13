@@ -69,6 +69,15 @@ function backend({
   const apply = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
     json({ actions: [], dry_run: true }),
   );
+  const report = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+    json({
+      rows: [
+        { raw_model: "route-only", route: "local-route", site_id: 1, members: [], rounds: [] },
+      ],
+      routes: ["local-route"],
+      sites: [siteRow],
+    }),
+  );
   const createRoute = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
     json({ id: 77, model_pattern: "m", enabled: true }),
   );
@@ -93,13 +102,7 @@ function backend({
         ]);
       if (path === "/admin/runtime-settings")
         return json({ editable: { site_probe_interval_seconds: 900 } });
-      if (path === "/admin/site-probe/report")
-        return json({
-          rows: [
-            { raw_model: "route-only", route: "local-route", site_id: 1, members: [], rounds: [] },
-          ],
-          sites: [siteRow],
-        });
+      if (path === "/admin/site-probe/report") return report(input, init);
       if (path === "/admin/site-probe/source") return save(input, init);
       if (path === "/admin/site-probe/collect") return collect(input, init);
       if (path === "/admin/site-probe/apply") return apply(input, init);
@@ -108,7 +111,7 @@ function backend({
       return json({});
     }),
   );
-  return { save, collect, apply, createRoute, autoMatch };
+  return { save, collect, apply, report, createRoute, autoMatch };
 }
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), {
@@ -169,6 +172,23 @@ it("keeps the collection total when search narrows the visible models", async ()
   expect(document.querySelectorAll(".observation-model:not(.is-header)")).toHaveLength(1);
   expect(screen.getByText(/32 models in the latest successful collection/)).toBeInTheDocument();
   expect(screen.getByText(/1 after filtering/)).toBeInTheDocument();
+});
+it("reads one site's report instead of the whole fleet's", async () => {
+  // The report is the expensive read in this panel, so the request has to name
+  // the site the panel is showing — and it must not be re-fired by editing the
+  // policy fields, whose verdicts this table does not render.
+  const actions = backend();
+  mount();
+  await screen.findByText("model-32");
+  await waitFor(() => expect(actions.report).toHaveBeenCalled());
+  expect(String(actions.report.mock.calls[0]?.[0])).toContain("site_id=1");
+  const calls = actions.report.mock.calls.length;
+  const threshold = screen.getByLabelText(/threshold/i) as HTMLInputElement;
+  fireEvent.change(threshold, { target: { value: "80" } });
+  fireEvent.change(threshold, { target: { value: "70" } });
+  // Give React Query time to have fired the refetch it must not fire.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(actions.report.mock.calls.length).toBe(calls);
 });
 it("keeps duplicate model observations when their upstream groups differ", async () => {
   backend({ group: true });

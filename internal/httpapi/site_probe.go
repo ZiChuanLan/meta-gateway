@@ -46,9 +46,19 @@ func (h *SiteProbeHandler) Register(r chi.Router) {
 
 // report returns the collected readings joined with our routes. The policy
 // knobs travel as query parameters so the dialog can preview a different
-// threshold without saving anything.
+// threshold without saving anything. site_id scopes the read to one site, which
+// is what the panel shows and what keeps the page load cheap on a large fleet.
 func (h *SiteProbeHandler) report(w http.ResponseWriter, r *http.Request) {
 	policy := siteprobe.DefaultPolicy()
+	var siteIDs []int64
+	if raw := strings.TrimSpace(r.URL.Query().Get("site_id")); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			writeError(w, http.StatusBadRequest, "invalid site_id")
+			return
+		}
+		siteIDs = []int64{id}
+	}
 	if raw := strings.TrimSpace(r.URL.Query().Get("ratio_threshold")); raw != "" {
 		if value, err := strconv.ParseFloat(raw, 64); err == nil {
 			policy.RatioThreshold = value
@@ -69,7 +79,7 @@ func (h *SiteProbeHandler) report(w http.ResponseWriter, r *http.Request) {
 			policy.HighRounds = value
 		}
 	}
-	report, err := h.service.Report(policy)
+	report, err := h.service.ReportForSites(policy, siteIDs)
 	if err != nil {
 		writeStoreError(w, err)
 		return

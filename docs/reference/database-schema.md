@@ -6,7 +6,7 @@
 引擎是 SQLite（WAL 模式），迁移脚本是 `internal/store/NNN_*.sql`，按文件名的数字序执行。
 本页由生成器**实际迁移一个临时数据库再读回 schema**得出，所以它反映的是代码最终产生的结构，而不是对 SQL 文本的解析结果。
 
-当前：`internal/store/` 下 **136** 个 `.sql` 文件，其中 **136** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
+当前：`internal/store/` 下 **137** 个 `.sql` 文件，其中 **137** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
 
 ## 迁移铁律
 
@@ -1103,7 +1103,7 @@
 
 ## 索引
 
-共 **81** 个索引。
+共 **82** 个索引。
 
 | 索引 | 表 | 唯一 |
 | --- | --- | --- |
@@ -1174,6 +1174,7 @@
 | `idx_site_beats_time` | `site_probe_heartbeats` | — |
 | `idx_site_probe_runs_site` | `site_probe_runs` | — |
 | `idx_site_probe_samples_model` | `site_probe_samples` | — |
+| `idx_site_probe_samples_partition` | `site_probe_samples` | — |
 | `idx_site_probe_samples_run` | `site_probe_samples` | — |
 | `idx_sites_base_url` | `sites` | — |
 | `team_code_redemptions_once` | `team_code_redemptions` | 是 |

@@ -1,6 +1,7 @@
 package store_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -106,5 +107,82 @@ func TestGCDeletesOrphanedProbeRows(t *testing.T) {
 	kept, err := db.ListSiteProbeSamples(liveRunID)
 	if err != nil || len(kept) != 1 {
 		t.Fatalf("live samples = %+v (err %v), want the row kept", kept, err)
+	}
+}
+
+// TestRecentSamplesReadIsSiteScopedAndIndexOnly pins the two properties the
+// console's observation panel depends on.
+//
+// Scoped: building the report rows walks every collected sample of the sites it
+// was asked about, so the panel — which shows one site at a time — asks for one
+// site, and the read has to narrow.
+//
+// Index-only: the per-sample partition probe is what made that read cost 9.9s
+// of CPU on a 214k-sample production database (the probe visited the wide
+// sample row for every candidate). idx_site_probe_samples_partition answers it
+// from the index; without it the panel goes back to burning seconds per page
+// load, silently.
+func TestRecentSamplesReadIsSiteScopedAndIndexOnly(t *testing.T) {
+	db := openTestDB(t)
+	first, err := db.Site.Create(&domain.Site{Name: "first", BaseURL: "https://first.example", Platform: "new-api", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := db.Site.Create(&domain.Site{Name: "second", BaseURL: "https://second.example", Platform: "new-api", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, site := range []int64{first, second} {
+		runID, err := db.CreateSiteProbeRun(site, "newapi", time.Now().UTC())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.InsertSiteProbeSamples([]store.SiteProbeSample{{
+			RunID: runID, SiteID: site, MonitorID: "1", MonitorName: "glm-5.2",
+			RawModel: "glm-5.2", GroupName: "default", ObservedAt: time.Now().UTC(), Samples: 5, UpCount: 5, Ratio: 1,
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.FinishSiteProbeRun(runID, store.SiteProbeRunOK, 1, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, err := db.ListRecentSamplesBySite(3, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("unscoped read returned %d sites, want both", len(all))
+	}
+	scoped, err := db.ListRecentSamplesBySite(3, []int64{first})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scoped) != 1 || len(scoped[first]) != 1 {
+		t.Fatalf("scoped read = %v, want only site %d", scoped, first)
+	}
+	if len(scoped[second]) != 0 {
+		t.Fatalf("scoped read still carries site %d", second)
+	}
+
+	rows, err := db.Query(`EXPLAIN QUERY PLAN SELECT 1 FROM site_probe_samples s
+		WHERE s.site_id=? AND s.raw_model=? AND s.monitor_id=? AND s.group_name=? AND s.source_key=? AND s.run_id=?`,
+		first, "glm-5.2", "1", "default", "key", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	detail := ""
+	for rows.Next() {
+		var id, parent, notUsed int
+		var line string
+		if err := rows.Scan(&id, &parent, &notUsed, &line); err != nil {
+			t.Fatal(err)
+		}
+		detail += line
+	}
+	if !strings.Contains(detail, "COVERING INDEX idx_site_probe_samples_partition") {
+		t.Fatalf("partition lookup plan = %q, want the covering index", detail)
 	}
 }
