@@ -159,7 +159,11 @@ export function BillingRulePanel({
       quoteList.length > 1 ? t("billing.evidenceMore", { count: quoteList.length - 1 }) : "",
       quoteIsUsable(newestQuote)
         ? ""
-        : t("billing.quoteUnavailable", { status: t(`billing.reason.${newestQuote.status}`) }),
+        : newestQuote.status === "unknown_group"
+          ? t("billing.quoteGroupUnknown")
+          : t("billing.quoteUnavailable", {
+              status: t(`billing.reason.${newestQuote.status}`),
+            }),
     ]
       .filter(Boolean)
       .join(" · ");

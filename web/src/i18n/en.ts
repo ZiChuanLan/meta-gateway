@@ -131,6 +131,8 @@ export const en: Dict = {
   "billing.refreshFailed": "Refresh failed; showing last successful snapshot",
   "billing.routeTab": "Routing",
   "billing.quoteUnavailable": "This price cannot be read directly: {status}",
+  "billing.quoteGroupUnknown":
+    "Upstream group unresolved: these rates exclude its multiplier, so they cannot be adopted",
   "billing.conflict": "The price list changed. Reload and compare; what you typed is kept.",
   "app.nav.team": "User management",
   "app.nav.account": "My account",

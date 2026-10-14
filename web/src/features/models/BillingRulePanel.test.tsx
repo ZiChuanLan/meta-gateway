@@ -390,3 +390,34 @@ it("shows the ladder and the time windows behind a published price", async () =>
   expect(copyButtons).toHaveLength(2);
   for (const button of copyButtons) expect(button).toBeEnabled();
 });
+
+it("shows a price whose upstream group is unconfirmed, and refuses to adopt it", async () => {
+  withQuote(view, [
+    {
+      ...quote,
+      id: 1,
+      site_name: "Elysiver",
+      // Readable — the rungs parsed — but the multiplier this account's group
+      // pays with is missing from every one of them.
+      status: "unknown_group",
+      raw: 'len <= 272000 ? tier("standard", p * 1 + c * 2) : tier("long", p * 2 + c * 4)',
+      values: { mode: "token", input_per_million: 2.5, output_per_million: 15 },
+      tiers: [
+        { max_prompt_tokens: 272000, prompt: 2.5, completion: 15, cache: 0.25, per_request: 0 },
+        { max_prompt_tokens: 0, prompt: 2, completion: 15, cache: 0.25, per_request: 0 },
+      ],
+    },
+  ]);
+  render(wrap(<BillingRulePanel model="m" memberId={17} siteId={4} />));
+  await openEvidence();
+  // The rungs stay visible: the price was read, it is the group that was not.
+  expect(screen.getByText("Rungs by prompt size")).toBeInTheDocument();
+  expect(screen.getByText("≤ 272,000")).toBeInTheDocument();
+  // And the reason is the group, not "this cannot be read" — the same note is
+  // on the summary line, so the check reads the entry's own note.
+  const note = document.querySelector(".quote-entry-note");
+  expect(note?.textContent).toMatch(/Upstream group unresolved/);
+  expect(note?.textContent).not.toMatch(/cannot be read directly/);
+  const copy = document.querySelector(".quote-entry-actions button");
+  expect(copy).toBeDisabled();
+});

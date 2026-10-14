@@ -54,6 +54,12 @@ export function QuoteActions({
   // "tiered" is a price the gateway can bill (the ladder below is the price);
   // only "unsupported" is the case where it has no number to offer.
   const calculable = (quote.status === "calculable" || quote.status === "tiered") && !expired;
+  // An unconfirmed upstream group is the one refusal that is not about reading:
+  // the rates below are the site's, but the multiplier that group pays with is
+  // missing from them, so the quote cannot be adopted. It still shows what it
+  // published — a ladder or a set of windows included — and says why.
+  const groupUnresolved = quote.status === "unknown_group" && !expired;
+  const showsStructure = calculable || groupUnresolved;
   const values = quote.values;
   const amount = (value?: number) => nativeAmount(value, quote.unit, t("billing.credit"));
   const quoteFields = [
@@ -142,9 +148,11 @@ export function QuoteActions({
       </p>
       {!calculable ? (
         <p role="status" className="quote-entry-note">
-          {t("billing.quoteUnavailable", {
-            status: t(`billing.reason.${expired ? "stale_quote" : quote.status}`),
-          })}
+          {groupUnresolved
+            ? t("billing.quoteGroupUnknown")
+            : t("billing.quoteUnavailable", {
+                status: t(`billing.reason.${expired ? "stale_quote" : quote.status}`),
+              })}
           {quote.raw ? <code>{quote.raw}</code> : null}
         </p>
       ) : null}
@@ -164,7 +172,7 @@ export function QuoteActions({
       {/* The structures behind the numbers, when the site published any. A ladder
           replaces the single price line; time windows scale whatever the base
           is, so they are listed with the timezone they were written in. */}
-      {calculable && quote.tiers?.length ? (
+      {showsStructure && quote.tiers?.length ? (
         <div className="quote-structure">
           <p className="quote-structure-title">{t("billing.ladderTitle")}</p>
           <ul className="quote-ladder">
@@ -184,7 +192,7 @@ export function QuoteActions({
           <p className="quote-structure-hint">{t("billing.ladderHint")}</p>
         </div>
       ) : null}
-      {calculable && quote.windows?.length ? (
+      {showsStructure && quote.windows?.length ? (
         <div className="quote-structure">
           <p className="quote-structure-title">
             {t("billing.windowsTitle", { timezone: quote.timezone || "UTC" })}

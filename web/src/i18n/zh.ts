@@ -121,6 +121,7 @@ export const zh: Dict = {
   "billing.refreshFailed": "刷新失败，保留最后一次结果",
   "billing.routeTab": "路由",
   "billing.quoteUnavailable": "这个价看不懂，没法直接用：{status}",
+  "billing.quoteGroupUnknown": "未确认上游分组：单价不含分组倍数，不能采用",
   "billing.conflict": "价目已变化。请重新载入并核对；你输入的内容已保留。",
   "app.nav.team": "用户管理",
   "app.nav.account": "个人设置",

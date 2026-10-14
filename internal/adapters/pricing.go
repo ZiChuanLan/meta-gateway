@@ -189,8 +189,13 @@ func NormalizePrice(item ModelPrice, quotaPerUnit int64) (PriceQuote, bool) {
 				quote.CacheReadPerMillion = base.Cache * groupRatio
 				quote.HasCacheRead = base.Cache > 0
 				// "tiered" is not "unreadable": the price is calculable, it just
-				// depends on the prompt size, and the console must say so.
-				quote.Status = "tiered"
+				// depends on the prompt size, and the console must say so. An
+				// unconfirmed group keeps its own status instead: the rungs are read,
+				// but the multiplier the site charges with is missing from every one
+				// of them, so adopting them would write a price nobody measured.
+				if !item.UnknownGroup {
+					quote.Status = "tiered"
+				}
 				return quote, true
 			}
 			quote.InputPerMillion = parsed.Coefs.Prompt * groupRatio
