@@ -973,6 +973,11 @@ export const en: Dict = {
   "channels.addHint":
     "Enter the upstream address and credential. Save & verify completes the initial connection check and model sync.",
   "channels.endpointPreview": "Requests will go to: {url}",
+  "channels.endpointPreviewModels": "Model list: {url}",
+  "channels.upstreamProtocol": "Upstream protocol: {protocol}",
+  "channels.upstreamProtocol.openai": "OpenAI compatible (Bearer, chat completions)",
+  "channels.upstreamProtocol.anthropic": "Anthropic Messages (x-api-key)",
+  "channels.upstreamProtocol.gemini": "Google Gemini (x-goog-api-key)",
   "channels.namePlaceholder": "Optional display name",
   "channels.baseUrlHint": "OpenAI-compatible root, with or without /v1. A full URL works too.",
   "channels.inheritsSite": "Uses site base URL",

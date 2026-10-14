@@ -331,15 +331,22 @@ export const api = (client: ApiClient) => ({
       title?: string;
     }>(`/admin/site-type?url=${encodeURIComponent(url)}`, signal),
   updateSite: (id: number, body: Partial<Site>) => client.put<Site>(`/admin/sites/${id}`, body),
-  /** What URL the gateway would actually call for a base URL, so a wrong join is
-   *  visible in the connection editor instead of surfacing as a 404 later. */
-  endpointPreview: (url: string, signal?: AbortSignal) =>
+  /** What URLs the gateway would actually call for a base URL and channel
+   *  type, so a wrong join is visible in the connection editor instead of
+   *  surfacing as a 404 later. `protocol` names the wire shape the channel will
+   *  speak (openai / anthropic / gemini) — the same base URL joins differently
+   *  per type. */
+  endpointPreview: (url: string, typeHint?: string, signal?: AbortSignal) =>
     client.get<{
       base_url?: string;
+      protocol?: string;
       chat_url?: string;
       models_url?: string;
       endpoint_override?: string;
-    }>(`/admin/endpoint-preview?url=${encodeURIComponent(url)}`, signal),
+    }>(
+      `/admin/endpoint-preview?url=${encodeURIComponent(url)}&type=${encodeURIComponent(typeHint ?? "")}`,
+      signal,
+    ),
   credentials: (siteId: number, signal?: AbortSignal) =>
     client.getList<Credential>(`/admin/sites/${siteId}/credentials`, signal),
   createCredential: (

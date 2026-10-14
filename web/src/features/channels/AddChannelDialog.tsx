@@ -1,5 +1,5 @@
 import { Cable, ChevronDown, ListPlus } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api/client";
 import { ModelPicker } from "../../components/ModelPicker";
@@ -18,6 +18,23 @@ import {
   type CreateConnectionInput,
 } from "./helpers";
 import { SyncModePicker, type ModelSyncMode } from "./SyncModePicker";
+
+/** What the gateway will really call for a base URL + channel type. */
+type EndpointPreview = {
+  protocol?: string;
+  chat_url?: string;
+  models_url?: string;
+};
+
+/**
+ * Protocol ids come from the backend's protocol families. An id the picker does
+ * not know falls back to the raw value rather than showing an empty label.
+ */
+const PROTOCOL_LABELS: Record<string, string> = {
+  openai: "channels.upstreamProtocol.openai",
+  anthropic: "channels.upstreamProtocol.anthropic",
+  gemini: "channels.upstreamProtocol.gemini",
+};
 
 export function AddChannelDialog({
   pending,
@@ -45,12 +62,13 @@ export function AddChannelDialog({
   const [typeTouched, setTypeTouched] = useState(false);
   const [groupName, setGroupName] = useState("default");
   const [showAdvanced, setShowAdvanced] = useState(false);
-  // The endpoint the gateway would actually call for this base URL. The
-  // provider presets are only as good as the URL builder, and a preset whose
+  // The endpoint the gateway would actually call for this base URL AND type.
+  // The provider presets are only as good as the URL builder, and a preset whose
   // base lands on the wrong path is invisible until the first request 404s —
   // which is what used to push operators into hand-written endpoint overrides.
-  // Showing the resolved URL in the dialog makes a wrong join obvious up front.
-  const [endpointPreview, setEndpointPreview] = useState<string | null>(null);
+  // The type belongs to the question: the same host serves OpenAI chat, OpenAI
+  // Responses or Anthropic Messages, and each joins the base differently.
+  const [endpointPreview, setEndpointPreview] = useState<EndpointPreview | null>(null);
   // Model list pulled from the upstream before anything is saved. Holding it
   // here (rather than creating the channel first and discovering after) is the
   // point: a wrong URL or key costs a retry, not a half-configured channel.
@@ -71,6 +89,28 @@ export function AddChannelDialog({
 
   const canSubmit = Boolean(baseUrl.trim() && secret.trim());
   const canFetchModels = canSubmit && !pending && !fetchingModels;
+
+  // Re-resolved whenever either half of the answer changes: the base URL and
+  // the type are separate questions, and the preview is the join of the two.
+  // The sequence keeps a slow earlier answer from overwriting a newer one — a
+  // stale preview is the same lie this panel exists to prevent.
+  const previewSeq = useRef(0);
+  const refreshEndpointPreview = (url: string, type: string) => {
+    const trimmed = url.trim();
+    const seq = ++previewSeq.current;
+    if (!trimmed) {
+      setEndpointPreview(null);
+      return;
+    }
+    service
+      .endpointPreview(trimmed, type)
+      .then((next) => {
+        if (seq === previewSeq.current) setEndpointPreview(next);
+      })
+      .catch(() => {
+        if (seq === previewSeq.current) setEndpointPreview(null);
+      });
+  };
   // A hint, not a rule: relay sites issue whatever token they like, so a
   // mismatch only ever earns a note next to the field.
   const secretHint = keyHintFor(typeHint);
@@ -194,6 +234,9 @@ export function AddChannelDialog({
               });
               setTypeHint(provider);
               setTypeTouched(true);
+              // The protocol changed under the preview; recompute it instead of
+              // leaving the previous type's endpoint on screen.
+              refreshEndpointPreview(baseUrl, provider);
             }}
             disabled={pending}
             allowCustom
@@ -219,10 +262,7 @@ export function AddChannelDialog({
               // the operator does not have to pick the type manually.
               const url = baseUrl.trim();
               if (!url) return;
-              service
-                .endpointPreview(url)
-                .then((preview) => setEndpointPreview(preview.chat_url ?? null))
-                .catch(() => setEndpointPreview(null));
+              refreshEndpointPreview(url, typeHint);
               service
                 .detectSiteType(url)
                 .then((detected) => {
@@ -231,6 +271,8 @@ export function AddChannelDialog({
                   if (typeTouched) return;
                   if (detected.family && TYPE_OPTIONS.some((o) => o.value === detected.family)) {
                     setTypeHint(detected.family);
+                    // Detection just changed which protocol the channel speaks.
+                    refreshEndpointPreview(url, detected.family);
                   }
                 })
                 .catch(() => undefined);
@@ -238,10 +280,26 @@ export function AddChannelDialog({
             placeholder="https://api.example.com"
             disabled={pending}
           />
-          {endpointPreview ? (
-            <small className="field-preview mono" title={endpointPreview}>
-              {t("channels.endpointPreview", { url: endpointPreview })}
-            </small>
+          {endpointPreview?.chat_url ? (
+            <>
+              <small className="field-preview">
+                {t("channels.upstreamProtocol", {
+                  protocol: t(
+                    PROTOCOL_LABELS[endpointPreview.protocol ?? ""] ??
+                      endpointPreview.protocol ??
+                      "",
+                  ),
+                })}
+              </small>
+              <small className="field-preview mono" title={endpointPreview.chat_url}>
+                {t("channels.endpointPreview", { url: endpointPreview.chat_url })}
+              </small>
+              {endpointPreview.models_url ? (
+                <small className="field-preview mono" title={endpointPreview.models_url}>
+                  {t("channels.endpointPreviewModels", { url: endpointPreview.models_url })}
+                </small>
+              ) : null}
+            </>
           ) : null}
         </Field>
         <Field label={t("channels.group")} hint={t("channels.groupHint")}>
