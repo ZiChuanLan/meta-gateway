@@ -4,6 +4,23 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v4.6.2] - 2026-10-14
+
+### Fixed
+
+- **打开「连接 → 站点观测」不再把网关 CPU 打满。** 那个面板每次打开都向 `/admin/site-probe/report` 要一份**全舰队**读数，
+  而这份读数要为每一条样本回答「这个 (站点, 模型, 分组, 监控器, 来源) 在不在本站最新一轮里」——`EXPLAIN QUERY PLAN` 显示
+  它在**回原表逐行查**。生产库实测（21.4 万条样本、2 核机器）：**一次请求 9.9 秒 CPU**，只出 1,359 行；叠加第二处放大——
+  前端的查询键带的是**草稿策略**，阈值输入框每敲一个字符就是又一次全舰队查询，而它算出的判定字段这张表根本不渲染。于是
+  点进去就卡、CPU 打满、转发跟着崩。现在四处一起改：迁移 135 加覆盖索引 `idx_site_probe_samples_partition`
+  （同一份数据上单站点读 5.15s → **0.30s**，全舰队 9.9s → 2.0s；21.4 万行上建索引 0.59s）；
+  `GET /admin/site-probe/report?site_id=N` 按站点取数；自动应用那轮只读它要动的站点；前端按站点做查询键，改阈值不再发请求。
+  响应新增 `routes`（全部启用路由名）——「这个名字还没被任何路由占用吗」是全局问题，按站点取行会让界面提议创建已存在的路由（409）。
+- **类型下限测试在本机 Windows 上不再必然失败。** `web/src/styles/typeScale.test.ts` 用 `node:fs` / `node:path` 读样式表，
+  却跑在 jsdom 工程里：Vite 对浏览器侧会把 node 内置模块**外部化**成空模块，`join` 就成了 `undefined`，整个文件在 collect
+  阶段就炸（同一份代码在 CI 的 Ubuntu runner 上是绿的，所以这条只在本地出现——看起来像自己刚弄坏的，实际白红）。
+  按仓库里已有的写法加上 `// @vitest-environment node` 即可（`releasePolicy.test.ts` 一直这么用），测试逻辑一字未改。
+
 ## [v4.6.1] - 2026-10-13
 
 ### Added
