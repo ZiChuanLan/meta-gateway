@@ -20,6 +20,12 @@
 .availability-readout > strong.is-ok { color: var(--success); }
 .availability-readout > strong.is-mixed { color: var(--warning); }
 .availability-readout > strong.is-failed { color: var(--danger); }
+/* The directory row flows its facts inline, one after another, so the readout
+   needs a leading gap: flush against the last chip the first bar reads as part of
+   that word. The gap belongs after a badge group that really has badges — most
+   rows carry none, and an empty wrapper must not stack a second gap onto the 8px
+   margin it already reserves for itself. */
+.model-row-name .model-meta-badges:has(> *) + .availability-indicator.is-compact { margin-left: 8px; }
 .availability-indicator.is-compact { gap: 3px; margin-top: 6px; }
 .availability-indicator.is-compact .availability-bars { height: 12px; gap: 1px; }
 .availability-indicator.is-compact .availability-bar { width: 2px; height: 12px; }
