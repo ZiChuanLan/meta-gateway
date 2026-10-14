@@ -770,6 +770,13 @@ export interface SiteProbeRow {
     service_state?: string;
     acquisition_state?: string;
     observed_at?: string;
+    /** Requests behind the ratio, and when the directory last counted them. */
+    request_count?: number;
+    success_count?: number;
+    failure_count?: number;
+    checked_at?: string;
+    /** When this gateway last wrote the snapshot the reading came from. */
+    snapshot_at?: string;
   };
   /**
    * The model catalog's reference price (USD per 1M), filled only when the site
@@ -2101,4 +2108,27 @@ export interface SiteObservations {
   sites: SiteProbeSiteStatus[];
   since: string;
   until: string;
+  /**
+   * The state of the monitoring directory's snapshot: when this gateway last
+   * pulled it, how many readings it held, and the failure if the last attempt
+   * had one. Absent until a sync has been attempted at all.
+   *
+   * Third-party readings are shown as the directory publishes them, so "we could
+   * not refresh these since X" is the caveat the panel must state — the readings
+   * themselves are not second-guessed.
+   */
+  third_party?: ThirdPartySync;
+}
+
+/** One monitoring-directory snapshot, as this gateway holds it. */
+export interface ThirdPartySync {
+  /** Address the snapshot was read from; absent before the first attempt. */
+  catalog_url?: string;
+  /** When the last attempt ran, successful or not. */
+  attempted_at?: string;
+  /** When the last attempt succeeded. Empty means it never has. */
+  synced_at?: string;
+  readings: number;
+  /** The last attempt's failure, in the directory's or the network's words. */
+  error?: string;
 }

@@ -3457,6 +3457,11 @@ export const zh: Dict = {
   "observation.collectRound": "本轮采集：成功 {collected} 个站点，失败 {failed} 个",
   "observation.cadence": "定时采集间隔 {seconds} 秒",
   "observation.schedule": "调整频率",
+  "observation.thirdParty": "第三方目录 {host}：{count} 条读数 · 上次同步 {when}",
+  "observation.thirdPartyFailed": "第三方目录 {host} 同步失败（{when}）：{error}",
+  "observation.thirdPartyWaiting": "第三方目录 {host}：还没有成功同步过",
+  "observation.thirdPartyNever": "还没试过",
+  "observation.thirdPartyUnknown": "未记录地址",
   "observation.imported":
     "导入完成：更新 {matched} 个站点 · 跳过 {skipped} 个（已有自定义来源）· 目录中 {unmatched} 个站点未创建 · 随后采集成功 {collected} 个、失败 {failed} 个",
   "observation.collectedNone": "这段时间没有采集到模型",

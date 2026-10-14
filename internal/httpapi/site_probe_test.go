@@ -179,10 +179,20 @@ func TestSiteProbeCollectAndApply(t *testing.T) {
 			MonitorCount int    `json:"monitor_count"`
 		} `json:"runs"`
 		Failed int `json:"failed"`
+		// The directory snapshot this collect refreshed: the third-party evidence
+		// the observation panel shows for the site, so 「立即采集」 has to move it.
+		ThirdParty struct {
+			SyncedAt string `json:"synced_at"`
+			Readings int    `json:"readings"`
+			Error    string `json:"error"`
+		} `json:"third_party"`
 	}
 	json.Unmarshal(post(t, server.URL+"/admin/site-probe/collect", map[string]any{"site_ids": []int64{site.ID}}), &collect)
 	if len(collect.Runs) != 1 || collect.Runs[0].Status != "ok" || collect.Runs[0].MonitorCount != 1 || collect.Failed != 0 {
 		t.Fatalf("collect = %+v", collect)
+	}
+	if collect.ThirdParty.SyncedAt == "" || collect.ThirdParty.Error != "" {
+		t.Fatalf("third party after collect = %+v, want the snapshot refreshed", collect.ThirdParty)
 	}
 	report := readReport(t, server.URL)
 	if len(report.Rows) != 1 {

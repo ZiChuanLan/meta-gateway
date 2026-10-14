@@ -145,6 +145,24 @@ type ExternalReading struct {
 	ServiceState     string  `json:"service_state,omitempty"`
 	AcquisitionState string  `json:"acquisition_state,omitempty"`
 	ObservedAt       string  `json:"observed_at,omitempty"`
+	// The window's totals behind Ratio, as the directory counts them: the console
+	// shows them so a percentage carries its evidence instead of standing alone.
+	RequestCount int    `json:"request_count,omitempty"`
+	SuccessCount int    `json:"success_count,omitempty"`
+	FailureCount int    `json:"failure_count,omitempty"`
+	CheckedAt    string `json:"checked_at,omitempty"`
+	// SnapshotAt is when the snapshot the reading came from was written — the
+	// only age a reader here judges for itself. It is not the directory's
+	// freshness: that is AcquisitionState, its own signal, and the reason a pair
+	// whose current bucket is empty is still evidence.
+	SnapshotAt time.Time `json:"snapshot_at,omitempty"`
+}
+
+// snapshotIsCurrent reports whether the snapshot behind this reading could be
+// refreshed recently enough to act on. A reading may be shown as soon as the
+// directory is collecting the pair; a verdict waits for a copy we could renew.
+func (r ExternalReading) snapshotIsCurrent(now time.Time) bool {
+	return !r.SnapshotAt.IsZero() && now.Sub(r.SnapshotAt) <= StaleAfter
 }
 
 // TrafficReading is our own observed outcome for one (route, site) pair. It is
@@ -279,9 +297,54 @@ type Service struct {
 	externalFetchTimeout time.Duration
 
 	// externalMu guards the last third-party snapshot sync, which is rate-limited
-	// independently of the site cadence.
+	// independently of the site cadence, and the state the console reads back.
 	externalMu       sync.Mutex
 	externalSyncedAt time.Time
+	externalState    ExternalSyncState
+
+	// syncMu serializes the actual snapshot fetch: the scheduled round and an
+	// operator's "collect now" both land here, and two concurrent pulls of a
+	// multi-megabyte snapshot would only make the directory's day worse.
+	syncMu sync.Mutex
+}
+
+// ExternalSyncState is what the console shows about the third-party snapshot:
+// when this gateway last pulled it, how many readings it held, and what the last
+// attempt answered if it failed. A directory nobody can reach has to be visible
+// as that, instead of readings that quietly stop moving while every rule that
+// reads them blames the data.
+type ExternalSyncState struct {
+	CatalogURL  string    `json:"catalog_url,omitempty"`
+	AttemptedAt time.Time `json:"attempted_at,omitempty"`
+	SyncedAt    time.Time `json:"synced_at,omitempty"`
+	Readings    int       `json:"readings"`
+	Error       string    `json:"error,omitempty"`
+}
+
+// ExternalSyncState returns the last sync outcome.
+func (s *Service) ExternalSyncState() ExternalSyncState {
+	s.externalMu.Lock()
+	defer s.externalMu.Unlock()
+	return s.externalState
+}
+
+// recordExternalSync stores one attempt's outcome. A failed attempt keeps the
+// previous successful snapshot (and its timestamp): the readings we already have
+// must not be erased by a directory that blinks, and the time of the last real
+// refresh is exactly what tells an operator whether what they are looking at is
+// current.
+func (s *Service) recordExternalSync(catalogURL string, at time.Time, readings int, cause error) {
+	s.externalMu.Lock()
+	defer s.externalMu.Unlock()
+	s.externalState.CatalogURL = catalogURL
+	s.externalState.AttemptedAt = at
+	if cause != nil {
+		s.externalState.Error = cause.Error()
+		return
+	}
+	s.externalState.Error = ""
+	s.externalState.SyncedAt = at
+	s.externalState.Readings = readings
 }
 
 // NewService builds the collector. The HTTP client is separate from the relay's
@@ -731,7 +794,7 @@ func (s *Service) rowsForSite(site domain.Site, samples []store.SiteProbeSample,
 			if row.ObservedPrice == nil {
 				row.CatalogPrice = catalogPriceFor(match.Route, catalog)
 			}
-			row.Verdict, row.LowStreak, row.OKStreak, row.AvailabilitySource = evaluate(policy, entry.rounds, row.Traffic, row.External, now)
+			row.Verdict, row.LowStreak, row.OKStreak, row.AvailabilitySource = evaluate(policy, entry.rounds, row.Traffic, actionableExternal(row.External, now), now)
 			rows = append(rows, row)
 		}
 	}
@@ -767,7 +830,7 @@ func (s *Service) rowsForSite(site domain.Site, samples []store.SiteProbeSample,
 		row.Traffic = trafficFor(row.Members, route, traffic, trafficWindowHours())
 		row.External = externalFor(site.ID, route, external)
 		row.PriceOnly = row.CatalogPrice != nil
-		row.Verdict, row.LowStreak, row.OKStreak, row.AvailabilitySource = evaluate(policy, nil, row.Traffic, row.External, now)
+		row.Verdict, row.LowStreak, row.OKStreak, row.AvailabilitySource = evaluate(policy, nil, row.Traffic, actionableExternal(row.External, now), now)
 		rows = append(rows, row)
 	}
 	return rows, candidates
@@ -919,54 +982,76 @@ func trafficFor(members []MemberState, route string, traffic map[string]store.Tr
 
 // externalIndex loads the third-party snapshot keyed by (site, model core name).
 //
-// Only readings the directory itself considers fresh are indexed. Measured: its
-// snapshot carries pairs it could not collect, with serviceState "no_samples" and
-// acquisitionState "stale" and an observedAt days old — and a ratio of 0. Indexing
-// those would park a channel because a third party stopped looking at it, which is
-// the opposite of the truth. Anything not fresh is simply absent here, so the row
-// falls back to "no samples" and nothing acts on it.
+// The directory publishes the same pair once per group, and the aggregate with
+// the most requests behind it is the one that speaks for the pair: a group whose
+// whole window is three probes is not a 66% model.
+//
+// Only readings the directory is currently collecting are indexed, and its
+// acquisitionState — not the age of observedAt — is what decides that. Measured
+// against the shipped directory: observedAt is the start of the last bucket that
+// had samples and routinely sits hours behind a pair whose current bucket is
+// empty, while the directory's own dashboard shows those same rows with their
+// full window aggregate (96.9% over 58,466 requests) and a 「暂无样本」 badge.
+// Judging them out made the gateway hide a reading the operator could see on the
+// directory's own page.
 func (s *Service) externalIndex() (map[string]ExternalReading, error) {
 	rows, err := s.db.ListSiteProbeExternal()
 	if err != nil {
 		return nil, err
 	}
+	snapshot := s.ExternalSyncState().SyncedAt
 	out := make(map[string]ExternalReading, len(rows))
 	for _, row := range rows {
 		if !externalReadingIsUsable(row) {
 			continue
 		}
-		out[externalKey(row.SiteID, row.RawModel)] = ExternalReading{
+		reading := ExternalReading{
 			Source: row.Source, Ratio: row.Ratio, AvgLatencyMS: row.AvgLatencyMS,
 			FirstTokenMS: row.FirstTokenMS, TokensPerSecond: row.TokensPerSecond,
 			ServiceState: row.ServiceState, AcquisitionState: row.AcquisitionState,
-			ObservedAt: row.ObservedAt,
+			ObservedAt: row.ObservedAt, CheckedAt: row.CheckedAt,
+			RequestCount: row.RequestCount, SuccessCount: row.SuccessCount,
+			FailureCount: row.FailureCount, SnapshotAt: row.SnapshotAt,
 		}
+		if reading.SnapshotAt.IsZero() {
+			reading.SnapshotAt = snapshot
+		}
+		key := externalKey(row.SiteID, row.RawModel)
+		if current, found := out[key]; found && current.RequestCount >= reading.RequestCount {
+			continue
+		}
+		out[key] = reading
 	}
 	return out, nil
 }
 
 // externalReadingIsUsable is the freshness gate for third-party evidence.
+//
+// The directory answers two different questions per row, and both are read here:
+// acquisitionState says whether it is currently collecting the pair at all, and
+// the request counts say how much the aggregate rests on. A pair it cannot see
+// (stale | collection_failed | login_expired | challenge_pending |
+// challenge_failed) is not evidence — that is the directory's own "I am not
+// seeing this" — and neither is a pair it has never sampled.
+//
+// What is deliberately NOT a rejection: serviceState no_samples. That only means
+// the current bucket is empty; the directory still publishes the whole window's
+// aggregate for the pair and prints it as its headline number, so a gateway that
+// threw it away was quieter than the source it was quoting.
 func externalReadingIsUsable(row store.SiteProbeExternal) bool {
-	switch strings.ToLower(strings.TrimSpace(row.AcquisitionState)) {
-	case "fresh":
-	default:
-		// stale | collection_failed | login_expired | challenge_pending |
-		// challenge_failed | unknown: the directory is not currently seeing this
-		// pair, which says nothing about the site.
+	if !strings.EqualFold(strings.TrimSpace(row.AcquisitionState), "fresh") {
 		return false
 	}
-	switch strings.ToLower(strings.TrimSpace(row.ServiceState)) {
-	case "healthy", "degraded", "failed":
-	default:
-		// no_samples | empty: no measurement to report.
-		return false
-	}
-	return true
+	// A measurement to report: either the directory says how much it rests on, or
+	// at least the ratio is not a flat zero. The pair it has never sampled
+	// (measured: ratio 0, no counts, an observedAt days old) stays out — that is
+	// the absence of a measurement, not a failed one.
+	return row.RequestCount > 0 || row.Ratio > 0
 }
 
-// externalFor looks a reading up by site and published model name. Several
-// directory rows can describe the same model in different groups; the best of
-// them is used, because a model that is healthy in any group is reachable.
+// externalFor looks a reading up by site and published model name. The snapshot
+// holds one reading per pair (externalIndex already chose which group's row
+// speaks for it), so this is a lookup, not a selection.
 func externalFor(siteID int64, rawModel string, external map[string]ExternalReading) *ExternalReading {
 	if len(external) == 0 {
 		return nil
@@ -977,6 +1062,17 @@ func externalFor(siteID int64, rawModel string, external map[string]ExternalRead
 		return nil
 	}
 	return &reading
+}
+
+// actionableExternal is the reading a verdict may act on: the same reading the
+// row shows, dropped when this gateway has not managed to refresh the snapshot it
+// came from. Nothing is disabled from a copy we cannot renew — the reading stays
+// on the row, and the panel says the snapshot is the part that stopped moving.
+func actionableExternal(reading *ExternalReading, now time.Time) *ExternalReading {
+	if reading == nil || !reading.snapshotIsCurrent(now) {
+		return nil
+	}
+	return reading
 }
 
 func externalKey(siteID int64, rawModel string) string {

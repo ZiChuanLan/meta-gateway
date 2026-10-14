@@ -41,6 +41,7 @@ import type {
   SiteProbePolicy,
   SiteProbeReport,
   SiteProbeRun,
+  ThirdPartySync,
   SiteNewsFeed,
   SiteNewsRefresh,
   KeepaliveEvent,
@@ -724,6 +725,11 @@ export const api = (client: ApiClient) => ({
       /** Round totals: present when every enabled site was collected. */
       collected?: number;
       failed: number;
+      /**
+       * The directory snapshot this collect refreshed. A collect reads it first,
+       * so the third-party readings in the panel are the ones from this click.
+       */
+      third_party?: ThirdPartySync;
     }>("/admin/site-probe/collect", siteIds && siteIds.length > 0 ? { site_ids: siteIds } : {}),
   /** dry_run lists what would change; the caller confirms before applying. */
   siteProbeApply: (body: {

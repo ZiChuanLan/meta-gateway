@@ -11,7 +11,9 @@ import type {
   SiteProbeRun,
   SiteProbeSiteStatus,
   Site,
+  ThirdPartySync,
 } from "../../api/types";
+import { relativeTime } from "../../lib/format";
 import { AvailabilityIndicator } from "../../components/AvailabilityIndicator";
 import { Button, ConfirmDialog, Dialog, Empty, ErrorState, InfoTip } from "../../components/ui";
 import { ActionMenu } from "../../components/ActionMenu";
@@ -164,6 +166,39 @@ export function SiteObservationWorkspace({
       });
     }
     return t("observation.collectRound", { collected: data.collected ?? 0, failed: data.failed });
+  };
+
+  /** The directory's snapshot in one line: what it holds and when this gateway
+   *  last managed to refresh it. Third-party readings are shown exactly as the
+   *  directory publishes them, so the only caveat the panel owes the operator
+   *  here is whether *our* copy is still moving — a failed refresh names its
+   *  reason instead of letting the readings quietly age. The line is absent
+   *  until a sync has been attempted, so the panel never talks about a snapshot
+   *  nobody has tried to pull. */
+  const thirdPartyLine = (state: ThirdPartySync): string => {
+    let host = t("observation.thirdPartyUnknown");
+    if (state.catalog_url) {
+      try {
+        host = new URL(state.catalog_url).host;
+      } catch {
+        host = state.catalog_url;
+      }
+    }
+    if (state.error) {
+      return t("observation.thirdPartyFailed", {
+        host,
+        when: state.attempted_at
+          ? relativeTime(state.attempted_at, t)
+          : t("observation.thirdPartyNever"),
+        error: state.error,
+      });
+    }
+    if (!state.synced_at) return t("observation.thirdPartyWaiting", { host });
+    return t("observation.thirdParty", {
+      host,
+      count: state.readings,
+      when: relativeTime(state.synced_at, t),
+    });
   };
 
   /** The directory's own receipt: what it matched, left alone, and collected. */
@@ -491,6 +526,18 @@ export function SiteObservationWorkspace({
         <p className="observation-cadence">
           {t("observation.cadence", { seconds: runtime.data.editable.site_probe_interval_seconds })}{" "}
           <Link to="/settings?tab=runtime">{t("observation.schedule")}</Link>
+        </p>
+      ) : null}
+      {observations.data?.third_party ? (
+        <p
+          className={
+            observations.data.third_party.error
+              ? "observation-collection-error"
+              : "observation-cadence"
+          }
+          role="status"
+        >
+          {thirdPartyLine(observations.data.third_party)}
         </p>
       ) : null}
       {collect.error ? (

@@ -3706,6 +3706,12 @@ export const en: Dict = {
   "observation.collectRound": "Round finished: {collected} sites collected, {failed} failed",
   "observation.cadence": "Scheduled collection every {seconds}s",
   "observation.schedule": "Change schedule",
+  "observation.thirdParty": "Third-party directory {host}: {count} readings · last synced {when}",
+  "observation.thirdPartyFailed":
+    "Third-party directory {host} could not be refreshed ({when}): {error}",
+  "observation.thirdPartyWaiting": "Third-party directory {host}: no successful sync yet",
+  "observation.thirdPartyNever": "never",
+  "observation.thirdPartyUnknown": "an unrecorded address",
   "observation.imported":
     "Import finished: updated {matched} sites · skipped {skipped} (they carry a source of their own) · {unmatched} directory sites not created · then {collected} collected and {failed} failed",
   "observation.collectedNone": "No model collected in this period",

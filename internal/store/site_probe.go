@@ -401,6 +401,20 @@ type SiteProbeExternal struct {
 	ServiceState     string  `json:"service_state,omitempty"`
 	AcquisitionState string  `json:"acquisition_state,omitempty"`
 	ObservedAt       string  `json:"observed_at,omitempty"`
+	// CheckedAt is when the directory itself last looked at the pair. It moves
+	// every few minutes, unlike ObservedAt (the last bucket that had samples),
+	// which can lag hours behind a pair the directory is still collecting.
+	CheckedAt string `json:"checked_at,omitempty"`
+	// The reading's evidence: how many requests the aggregate rests on. A pair
+	// nobody has probed has no measurement to report, whatever its ratio says.
+	RequestCount int `json:"request_count,omitempty"`
+	SuccessCount int `json:"success_count,omitempty"`
+	FailureCount int `json:"failure_count,omitempty"`
+	// SnapshotAt is when this gateway wrote the row — the age of our copy, which
+	// is the only freshness a reader here may judge for itself. It is read back
+	// from the table rather than kept in memory, so it survives a restart and any
+	// path that stores a snapshot is taken at face value.
+	SnapshotAt time.Time `json:"snapshot_at,omitempty"`
 }
 
 // ReplaceSiteProbeExternal swaps the whole third-party snapshot in one
@@ -418,8 +432,9 @@ func (db *DB) ReplaceSiteProbeExternal(rows []SiteProbeExternal) error {
 	}
 	stmt, err := tx.Prepare(`INSERT INTO site_probe_external
 		(source, site_id, site_name, site_host, raw_model, group_name, ratio, avg_latency_ms,
-		 first_token_ms, tokens_per_second, service_state, acquisition_state, observed_at, collected_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`)
+		 first_token_ms, tokens_per_second, service_state, acquisition_state, observed_at, collected_at,
+		 checked_at, request_count, success_count, failure_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("site probe: prepare external insert: %w", err)
 	}
@@ -427,7 +442,8 @@ func (db *DB) ReplaceSiteProbeExternal(rows []SiteProbeExternal) error {
 	for _, row := range rows {
 		if _, err := stmt.Exec(row.Source, row.SiteID, row.SiteName, row.SiteHost, row.RawModel, row.GroupName,
 			row.Ratio, row.AvgLatencyMS, row.FirstTokenMS, row.TokensPerSecond, row.ServiceState,
-			row.AcquisitionState, row.ObservedAt); err != nil {
+			row.AcquisitionState, row.ObservedAt, row.CheckedAt, row.RequestCount, row.SuccessCount,
+			row.FailureCount); err != nil {
 			return fmt.Errorf("site probe: insert external reading: %w", err)
 		}
 	}
@@ -440,7 +456,8 @@ func (db *DB) ReplaceSiteProbeExternal(rows []SiteProbeExternal) error {
 // ListSiteProbeExternal returns the current third-party snapshot.
 func (db *DB) ListSiteProbeExternal() ([]SiteProbeExternal, error) {
 	rows, err := db.Query(`SELECT source, site_id, site_name, site_host, raw_model, group_name, ratio,
-			avg_latency_ms, first_token_ms, tokens_per_second, service_state, acquisition_state, observed_at
+			avg_latency_ms, first_token_ms, tokens_per_second, service_state, acquisition_state, observed_at,
+			checked_at, request_count, success_count, failure_count, collected_at
 		FROM site_probe_external`)
 	if err != nil {
 		return nil, fmt.Errorf("site probe: list external: %w", err)
@@ -451,7 +468,8 @@ func (db *DB) ListSiteProbeExternal() ([]SiteProbeExternal, error) {
 		var row SiteProbeExternal
 		if err := rows.Scan(&row.Source, &row.SiteID, &row.SiteName, &row.SiteHost, &row.RawModel, &row.GroupName,
 			&row.Ratio, &row.AvgLatencyMS, &row.FirstTokenMS, &row.TokensPerSecond, &row.ServiceState,
-			&row.AcquisitionState, &row.ObservedAt); err != nil {
+			&row.AcquisitionState, &row.ObservedAt, &row.CheckedAt, &row.RequestCount, &row.SuccessCount,
+			&row.FailureCount, scanTime(&row.SnapshotAt)); err != nil {
 			return nil, fmt.Errorf("site probe: scan external: %w", err)
 		}
 		out = append(out, row)

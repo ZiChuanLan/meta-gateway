@@ -105,6 +105,18 @@ func (h *SiteProbeHandler) collect(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Minute)
 	defer cancel()
 
+	// The third-party snapshot goes first, exactly as it does in a scheduled
+	// round: one request that informs every site, and putting it after the sites
+	// loses it whenever a slow site eats the budget. It is forced rather than due
+	// — the panel shows third-party readings for the site in front of the
+	// operator, so 「立即采集」 has to refresh those too, not just the site's own.
+	// A failed refresh is reported through the state below, never fatal: the
+	// sites are still what the operator asked to collect.
+	if _, err := h.service.SyncExternalNow(ctx, h.scheduler.CatalogURL()); err != nil {
+		log.Printf("site probe: manual collect could not refresh the third-party snapshot: %v", err)
+	}
+	thirdParty := h.service.ExternalSyncState()
+
 	runs := []*store.SiteProbeRun{}
 	failed := 0
 	if len(request.SiteIDs) == 0 {
@@ -119,7 +131,10 @@ func (h *SiteProbeHandler) collect(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadGateway, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, result)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"collected": result.Collected, "failed": result.Failed,
+			"actions": result.Actions, "third_party": thirdParty,
+		})
 		return
 	}
 	for _, id := range request.SiteIDs {
@@ -155,7 +170,9 @@ func (h *SiteProbeHandler) collect(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"runs": runs, "failed": failed, "actions": actions})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"runs": runs, "failed": failed, "actions": actions, "third_party": thirdParty,
+	})
 }
 
 func (h *SiteProbeHandler) adoptPrice(w http.ResponseWriter, r *http.Request) {

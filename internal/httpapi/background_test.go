@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"runtime"
 	"strings"
@@ -75,6 +76,15 @@ func TestMain(m *testing.M) {
 // production builds.
 func NewTestRouter(t *testing.T, cfg *config.Config, db *store.DB, enc *crypto.Encrypter) http.Handler {
 	t.Helper()
+	// A manual collect refreshes the monitoring-directory snapshot — that is the
+	// third-party evidence the console shows for the site being collected — and no
+	// test may depend on the shipped directory being reachable. Only an unset
+	// address is replaced: production leaves the field empty on purpose so
+	// Service.SyncExternal applies its own default, and a test that wants the
+	// directory's real shape sets SiteProbeCatalogURL itself.
+	if cfg != nil && cfg.SiteProbeCatalogURL == "" {
+		cfg.SiteProbeCatalogURL = emptyDirectoryURL(t)
+	}
 	handler := New(cfg, db, enc)
 	// t.Cleanup runs after the test body's own defers, so the test's
 	// `defer db.Close()` has already run by the time the schedulers stop.
@@ -88,6 +98,18 @@ func NewTestRouter(t *testing.T, cfg *config.Config, db *store.DB, enc *crypto.E
 		StopBackground(ctx)
 	})
 	return handler
+}
+
+// emptyDirectoryURL serves a monitoring directory's documented payload with no
+// rows, for tests whose subject is not the directory itself.
+func emptyDirectoryURL(t *testing.T) string {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"rows":[]}`))
+	}))
+	t.Cleanup(server.Close)
+	return server.URL
 }
 
 // TestRouterShutdownReclaimsBackgroundGoroutines pins the invariant the rest of

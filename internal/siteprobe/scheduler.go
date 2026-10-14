@@ -59,6 +59,11 @@ func NewScheduler(service *Service, interval, jitter time.Duration, catalogURL s
 	return scheduler
 }
 
+// CatalogURL is the configured third-party directory. Empty means the shipped
+// default, which Service.SyncExternal applies: the console's refresh button and
+// the scheduled round must resolve it in exactly one place.
+func (s *Scheduler) CatalogURL() string { return s.catalogURL }
+
 // SetSchedule hot-applies the collection cadence. A non-positive interval falls
 // back to the shipped default rather than disabling collection: the loop has no
 // off switch, and "0" from an unset settings row must not stop every site from

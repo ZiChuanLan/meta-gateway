@@ -25,6 +25,13 @@ type Observations struct {
 	Sites []SiteStatus  `json:"sites"`
 	Since time.Time     `json:"since"`
 	Until time.Time     `json:"until"`
+	// ThirdParty is the state of the monitoring directory's snapshot — when it was
+	// last pulled, how many readings it held, and the failure if the last attempt
+	// had one. It is absent until this process has attempted a sync: the panel
+	// shows third-party readings for the site it is displaying, so "we have not
+	// been able to refresh those since X" belongs next to them, and a line about
+	// a snapshot nobody has tried to pull yet would be noise.
+	ThirdParty *ExternalSyncState `json:"third_party,omitempty"`
 }
 
 func (s *Service) Observations(hours int) (*Observations, error) {
@@ -34,6 +41,9 @@ func (s *Service) Observations(hours int) (*Observations, error) {
 	until := s.now().UTC().Truncate(time.Second).Add(time.Second)
 	since := until.Add(-time.Duration(hours) * time.Hour)
 	result := &Observations{Items: []Observation{}, Sites: []SiteStatus{}, Since: since, Until: until}
+	if state := s.ExternalSyncState(); !state.AttemptedAt.IsZero() {
+		result.ThirdParty = &state
+	}
 	sites, err := s.db.Site.List()
 	if err != nil {
 		return nil, err
@@ -254,16 +264,29 @@ func addSiteEvidence(item *AvailabilityItem, observations *Observations, externa
 		item.Ambiguous = true
 	}
 	if reading := externalFor(item.SiteID, item.Model, external); reading != nil {
-		series := store.NewAvailabilitySeries("watchbot", "site_model", since, until)
-		ratio := reading.Ratio
-		series.Ratio = &ratio
-		series.Stale = true
-		if at, err := time.Parse(time.RFC3339, reading.ObservedAt); err == nil {
-			series.LastAt = &at
-			series.Stale = until.Sub(at) > StaleAfter
-		}
-		item.Evidence = append(item.Evidence, series)
+		item.Evidence = append(item.Evidence, thirdPartySeries(*reading, since, until))
 	}
+}
+
+// thirdPartySeries renders one directory reading as evidence.
+//
+// The ratio, the counts and the last sample are the directory's own numbers for
+// its own window, printed for what they are. What this gateway judges is only
+// its own copy: a snapshot it has not been able to refresh for longer than a probe
+// round is allowed to go stale is marked as such, because "we could not pull
+// this" is a fact about us — and the only one that should wear 「已过期」.
+func thirdPartySeries(reading ExternalReading, since, until time.Time) *store.AvailabilitySeries {
+	series := store.NewAvailabilitySeries(SourceWatchbot, "site_model", since, until)
+	ratio := reading.Ratio
+	series.Ratio = &ratio
+	series.Samples = reading.RequestCount
+	series.OK = reading.SuccessCount
+	series.Failed = reading.FailureCount
+	series.Stale = reading.SnapshotAt.IsZero() || until.Sub(reading.SnapshotAt) > StaleAfter
+	if at, err := time.Parse(time.RFC3339, reading.ObservedAt); err == nil {
+		series.LastAt = &at
+	}
+	return series
 }
 func choosePrimary(item *AvailabilityItem) {
 	for _, s := range item.Evidence {

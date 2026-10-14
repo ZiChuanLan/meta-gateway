@@ -35,18 +35,27 @@ const externalSyncInterval = 15 * time.Minute
 const externalFetchTimeout = 15 * time.Second
 
 // externalCatalog is the subset of a monitoring directory's snapshot the gateway
-// reads. It carries health only: prices come from the sites themselves, which is
-// first-hand and per-group, while the directory's price is a copy of theirs.
+// reads. It carries health and its evidence: prices come from the sites
+// themselves, which is first-hand and per-group, while the directory's price is
+// a copy of theirs.
 type externalCatalog struct {
 	Rows []struct {
-		SiteName         string  `json:"siteName"`
-		SiteURL          string  `json:"siteUrl"`
-		RawModelName     string  `json:"rawModelName"`
-		GroupName        string  `json:"groupName"`
-		ServiceState     string  `json:"serviceState"`
-		AcquisitionState string  `json:"acquisitionState"`
-		ObservedAt       string  `json:"observedAt"`
-		SuccessRatio     float64 `json:"successRatio"`
+		SiteName         string `json:"siteName"`
+		SiteURL          string `json:"siteUrl"`
+		RawModelName     string `json:"rawModelName"`
+		GroupName        string `json:"groupName"`
+		ServiceState     string `json:"serviceState"`
+		AcquisitionState string `json:"acquisitionState"`
+		ObservedAt       string `json:"observedAt"`
+		// CollectedAt is when the directory itself last looked at the pair. Its
+		// own freshness signal, and the one the console's 「更新」 column shows:
+		// measured, it advances every few minutes while observedAt stays put on
+		// the last bucket that produced samples.
+		CollectedAt  string  `json:"collectedAt"`
+		RequestCount int     `json:"requestCount"`
+		SuccessCount int     `json:"successCount"`
+		FailureCount int     `json:"failureCount"`
+		SuccessRatio float64 `json:"successRatio"`
 		// Latency fields are floats in the payload even though they read as
 		// milliseconds: measured, averageLatencyMs arrived as 25324.967391304348.
 		// Decoding them as int made the whole snapshot fail to parse, so they are
@@ -93,7 +102,8 @@ func FetchExternalCatalog(ctx context.Context, client *http.Client, catalogURL s
 			Ratio: row.SuccessRatio, AvgLatencyMS: int(math.Round(row.AverageLatencyMs)),
 			FirstTokenMS: int(math.Round(row.FirstTokenMs)), TokensPerSecond: row.TokensPerSecond,
 			ServiceState: row.ServiceState, AcquisitionState: row.AcquisitionState,
-			ObservedAt: row.ObservedAt,
+			ObservedAt: row.ObservedAt, CheckedAt: row.CollectedAt,
+			RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, FailureCount: row.FailureCount,
 		})
 	}
 	return out, nil
@@ -170,16 +180,37 @@ func (s *Service) SyncExternal(ctx context.Context, catalogURL string) (int, err
 	if strings.TrimSpace(catalogURL) == "" {
 		catalogURL = DefaultCatalogURL
 	}
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, s.externalFetchTimeout)
 	defer cancel()
 	readings, err := FetchExternalCatalog(ctx, s.client, catalogURL, sites)
 	if err != nil {
+		s.recordExternalSync(catalogURL, s.now(), 0, err)
 		return 0, err
 	}
 	if err := s.db.ReplaceSiteProbeExternal(readings); err != nil {
+		s.recordExternalSync(catalogURL, s.now(), 0, err)
 		return 0, err
 	}
+	s.recordExternalSync(catalogURL, s.now(), len(readings), nil)
 	return len(readings), nil
+}
+
+// SyncExternalNow refreshes the snapshot regardless of the scheduled cadence.
+//
+// The console's 「立即采集」 takes this path: the panel shows third-party readings
+// for the site the operator is looking at, so a button that refreshes everything
+// except the evidence in front of them is a bug they can watch happening. The
+// attempt is stamped on the due gate either way, because a failing directory
+// must not be hammered by the next scheduled round on top of this attempt.
+func (s *Service) SyncExternalNow(ctx context.Context, catalogURL string) (int, error) {
+	defer func() {
+		s.externalMu.Lock()
+		s.externalSyncedAt = s.now()
+		s.externalMu.Unlock()
+	}()
+	return s.SyncExternal(ctx, catalogURL)
 }
 
 // SyncExternalIfDue runs the snapshot sync at most once per interval. The

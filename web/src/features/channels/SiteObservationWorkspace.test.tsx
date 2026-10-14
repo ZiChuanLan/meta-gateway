@@ -25,6 +25,12 @@ function backend({
   sitePatch = {},
   items: itemCount = 32,
   collectResult = { failed: 0 },
+  thirdParty = {
+    catalog_url: "https://watchbot.cfd/api/v1/public/dashboard",
+    attempted_at: new Date(Date.now() - 60_000).toISOString(),
+    synced_at: new Date(Date.now() - 60_000).toISOString(),
+    readings: 689,
+  },
 }: {
   failure?: boolean;
   group?: boolean;
@@ -32,6 +38,7 @@ function backend({
   sitePatch?: Partial<typeof site>;
   items?: number;
   collectResult?: Record<string, unknown>;
+  thirdParty?: SiteObservations["third_party"];
 } = {}) {
   const siteRow = { ...site, ...sitePatch };
   const items = Array.from({ length: itemCount }, (_, i) => ({
@@ -61,6 +68,7 @@ function backend({
     items,
     since: "2026-10-10T00:00:00Z",
     until: "2026-10-11T00:00:00Z",
+    third_party: thirdParty,
   };
   const save = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({ id: 1 }));
   const collect = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -173,6 +181,41 @@ it("keeps the collection total when search narrows the visible models", async ()
   expect(screen.getByText(/32 models in the latest successful collection/)).toBeInTheDocument();
   expect(screen.getByText(/1 after filtering/)).toBeInTheDocument();
 });
+it("says what the third-party snapshot holds and when it last moved", async () => {
+  backend({
+    thirdParty: {
+      catalog_url: "https://watchbot.cfd/api/v1/public/dashboard",
+      attempted_at: new Date(Date.now() - 60_000).toISOString(),
+      synced_at: new Date(Date.now() - 60_000).toISOString(),
+      readings: 679,
+    },
+  });
+  mount();
+  await screen.findByText("model-01");
+  const line = await screen.findByText(/Third-party directory watchbot\.cfd/);
+  expect(line.textContent).toContain("679 readings");
+  expect(line.textContent).toContain("last synced");
+});
+
+it("states when the third-party snapshot could not be refreshed", async () => {
+  // Third-party readings are shown as the directory publishes them, so the one
+  // thing this panel owes the operator is whether our copy of them is moving:
+  // a failed refresh names its reason instead of the readings quietly ageing.
+  backend({
+    thirdParty: {
+      catalog_url: "https://watchbot.cfd/api/v1/public/dashboard",
+      attempted_at: new Date(Date.now() - 120_000).toISOString(),
+      readings: 0,
+      error: "probe source https://watchbot.cfd answered 403",
+    },
+  });
+  mount();
+  await screen.findByText("model-01");
+  const line = await screen.findByText(/could not be refreshed/);
+  expect(line.textContent).toContain("watchbot.cfd");
+  expect(line.textContent).toContain("answered 403");
+});
+
 it("reads one site's report instead of the whole fleet's", async () => {
   // The report is the expensive read in this panel, so the request has to name
   // the site the panel is showing — and it must not be re-fired by editing the

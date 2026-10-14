@@ -6,7 +6,7 @@
 引擎是 SQLite（WAL 模式），迁移脚本是 `internal/store/NNN_*.sql`，按文件名的数字序执行。
 本页由生成器**实际迁移一个临时数据库再读回 schema**得出，所以它反映的是代码最终产生的结构，而不是对 SQL 文本的解析结果。
 
-当前：`internal/store/` 下 **137** 个 `.sql` 文件，其中 **137** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
+当前：`internal/store/` 下 **138** 个 `.sql` 文件，其中 **138** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
 
 ## 迁移铁律
 
@@ -832,7 +832,7 @@
 | `currency_rate` | REAL | 是 | 1 | — |
 | `updated_at` | TEXT | 是 | datetime('now') | — |
 
-### site_probe_external · 15 列
+### site_probe_external · 19 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
 | --- | --- | --- | --- | --- |
@@ -851,6 +851,10 @@
 | `acquisition_state` | TEXT | 是 | '' | — |
 | `observed_at` | TEXT | 是 | '' | — |
 | `collected_at` | TEXT | 是 | datetime('now') | — |
+| `checked_at` | TEXT | 是 | '' | — |
+| `request_count` | INTEGER | 是 | 0 | — |
+| `success_count` | INTEGER | 是 | 0 | — |
+| `failure_count` | INTEGER | 是 | 0 | — |
 
 ### site_probe_heartbeats · 8 列
 
