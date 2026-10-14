@@ -120,12 +120,13 @@ export function BillingRulePanel({
     (quote.status === "calculable" || quote.status === "tiered") &&
     (!quote.expires_at || new Date(quote.expires_at).getTime() > Date.now());
   const quoteList = quotes.data?.items ?? [];
-  // The site this panel belongs to leads, then the other sites, then the model
-  // catalog: a member panel's price is almost always the one from its own site,
-  // and a model panel's is the one that site charges. Sorted only for display —
-  // the API keeps its own order.
+  // The model catalog leads, then the site this panel belongs to, then the other
+  // sites. The catalog is the reference price — the one number an operator can
+  // compare every channel against — and this order also decides which price the
+  // summary line above the list quotes, so it has to be the reference one.
+  // Sorted for display only; the API keeps its own order.
   const quoteRank = (quote: PriceQuote) =>
-    siteId && quote.site_id === siteId ? 0 : quote.purpose === "reference" ? 2 : 1;
+    quote.purpose === "reference" ? 0 : siteId && quote.site_id === siteId ? 1 : 2;
   const orderedQuotes = [...quoteList].sort(
     (a, b) => quoteRank(a) - quoteRank(b) || Date.parse(b.observed_at) - Date.parse(a.observed_at),
   );

@@ -290,7 +290,7 @@ it("answers with the price in force and folds the sources into one line", async 
   fireEvent.click(screen.getByRole("button", { name: "Use as my price" }));
   expect(screen.getByRole("button", { name: "Confirm and use it" })).toBeInTheDocument();
 });
-it("titles every price with the site that published it, its own site first", async () => {
+it("titles every price with whoever published it, the catalog leading", async () => {
   withQuote(view, [
     {
       ...quote,
@@ -313,8 +313,9 @@ it("titles every price with the site that published it, its own site first", asy
       observed_at: "2026-10-11T00:00:00Z",
       unit: { kind: "iso", code: "USD", display_currency: "USD", display_symbol: "$" },
     },
-    // A catalog quote keeps the last place, and a unit with no symbol of its own
-    // falls back to printing the code.
+    // A catalog quote leads: it is the reference price, and the summary line
+    // quotes whatever comes first. A unit with no symbol of its own falls back
+    // to printing the code.
     {
       ...quote,
       id: 3,
@@ -331,12 +332,12 @@ it("titles every price with the site that published it, its own site first", asy
   const names = [...document.querySelectorAll(".quote-entry-title strong")].map(
     (el) => el.textContent,
   );
-  // The member's own site leads, then the other site, then the catalog.
-  expect(names).toEqual(["Aurora", "Sandbox", "Model catalog"]);
+  // The catalog leads, then the member's own site, then the other site.
+  expect(names).toEqual(["Model catalog", "Aurora", "Sandbox"]);
   // Each row wears the mark of the money it is in, not a repeat of its own name:
   // that is what tells a ¥ price from a $ one at a glance.
   const marks = [...document.querySelectorAll(".quote-source-badge")].map((el) => el.textContent);
-  expect(marks).toEqual(["$", "¥", "USD"]);
+  expect(marks).toEqual(["USD", "$", "¥"]);
   expect(document.querySelectorAll(".quote-chip")).toHaveLength(1);
 });
 it("names why there is no catalog price instead of showing an empty list", async () => {
