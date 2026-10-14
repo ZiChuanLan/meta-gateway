@@ -32,6 +32,12 @@ function stubPreview() {
             ? "https://api.deepseek.com/anthropic/v1/messages"
             : "https://api.deepseek.com/anthropic/v1/chat/completions",
           models_url: "https://api.deepseek.com/anthropic/v1/models",
+          surfaces: anthropic
+            ? [{ downstream: ["chat", "responses"], mode: "translated" }]
+            : [
+                { downstream: ["responses"], mode: "native_fallback" },
+                { downstream: ["messages"], mode: "translated" },
+              ],
         });
       }
       if (path === "/admin/sites") return jsonResponse([]);
@@ -99,6 +105,16 @@ describe("AddChannelDialog endpoint preview", () => {
     expect(
       screen.getByText("Model list: https://api.deepseek.com/anthropic/v1/models"),
     ).toBeInTheDocument();
+    // "This upstream is OpenAI-shaped" does not answer for a Responses or Claude
+    // client; those two rows are the difference between the three protocols.
+    expect(
+      screen.getByText(
+        "Responses clients → sent in the native Responses shape first, rewritten to chat completions on 404/405",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Anthropic clients → rewritten to chat completions"),
+    ).toBeInTheDocument();
 
     // The field's own label names the trigger ("Type"), not its current value.
     fireEvent.click(screen.getByRole("button", { name: "Type" }));
@@ -111,6 +127,9 @@ describe("AddChannelDialog endpoint preview", () => {
     );
     expect(
       screen.getByText("Upstream protocol: Anthropic Messages (x-api-key)"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Chat / Responses clients → rewritten to Anthropic Messages"),
     ).toBeInTheDocument();
     expect(calls.at(-1)?.type).toBe("anthropic");
   });

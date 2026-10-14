@@ -335,7 +335,8 @@ export const api = (client: ApiClient) => ({
    *  type, so a wrong join is visible in the connection editor instead of
    *  surfacing as a 404 later. `protocol` names the wire shape the channel will
    *  speak (openai / anthropic / gemini) — the same base URL joins differently
-   *  per type. */
+   *  per type. `surfaces` lists the adaptations: which downstream protocols this
+   *  channel serves through something other than the upstream's own format. */
   endpointPreview: (url: string, typeHint?: string, signal?: AbortSignal) =>
     client.get<{
       base_url?: string;
@@ -343,6 +344,7 @@ export const api = (client: ApiClient) => ({
       chat_url?: string;
       models_url?: string;
       endpoint_override?: string;
+      surfaces?: Array<{ downstream?: string[]; mode?: string }>;
     }>(
       `/admin/endpoint-preview?url=${encodeURIComponent(url)}&type=${encodeURIComponent(typeHint ?? "")}`,
       signal,

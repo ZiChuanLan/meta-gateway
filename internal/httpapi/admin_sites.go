@@ -75,6 +75,7 @@ func (h *AdminHandler) endpointPreview(w http.ResponseWriter, r *http.Request) {
 		"protocol":   protocol,
 		"chat_url":   chat,
 		"models_url": models,
+		"surfaces":   previewSurfaces(protocol),
 	}
 	if endpointOverride != "" {
 		payload["endpoint_override"] = endpointOverride
@@ -120,6 +121,39 @@ func previewChatURL(adapter adapters.ForwardAdapter, base, override string) (str
 		return adapters.JoinRawPath(base, override)
 	}
 	return adapter.BuildUpstreamURL(base, override)
+}
+
+// previewSurface is one adaptation rule: which downstream protocols this
+// channel serves through something other than its own wire format, and how.
+type previewSurface struct {
+	// Downstream protocol ids: chat | responses | messages.
+	Downstream []string `json:"downstream"`
+	// native_fallback = try the upstream's own endpoint first, replay pivoted on
+	// 404/405; translated = always converted into the upstream's protocol.
+	Mode string `json:"mode"`
+}
+
+// previewSurfaces answers the other half of "what does this upstream speak":
+// what happens to a client that speaks something else. Only the adaptations are
+// listed — the channel's own protocol is the line above it, and repeating that
+// row would say nothing.
+//
+// These are the relay's real rules, not a description of them: an OpenAI-family
+// channel probes a native `/v1/responses` and replays on chat/completions when
+// the upstream answers 404/405 (proxy's responses fallback), every other family
+// goes through the registered translation for its pair.
+func previewSurfaces(family string) []previewSurface {
+	switch family {
+	case "anthropic":
+		return []previewSurface{{Downstream: []string{"chat", "responses"}, Mode: "translated"}}
+	case "gemini":
+		return []previewSurface{{Downstream: []string{"chat", "responses", "messages"}, Mode: "translated"}}
+	default:
+		return []previewSurface{
+			{Downstream: []string{"responses"}, Mode: "native_fallback"},
+			{Downstream: []string{"messages"}, Mode: "translated"},
+		}
+	}
 }
 
 // detectSiteType runs the AAH-style site-detection chain against a candidate

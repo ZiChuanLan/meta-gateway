@@ -24,6 +24,8 @@ type EndpointPreview = {
   protocol?: string;
   chat_url?: string;
   models_url?: string;
+  /** Downstream protocols served through another shape, and how. */
+  surfaces?: Array<{ downstream?: string[]; mode?: string }>;
 };
 
 /**
@@ -34,6 +36,13 @@ const PROTOCOL_LABELS: Record<string, string> = {
   openai: "channels.upstreamProtocol.openai",
   anthropic: "channels.upstreamProtocol.anthropic",
   gemini: "channels.upstreamProtocol.gemini",
+};
+
+/** The same families named the way a user of them would say it. */
+const PROTOCOL_TARGETS: Record<string, string> = {
+  openai: "channels.protocolTarget.openai",
+  anthropic: "channels.protocolTarget.anthropic",
+  gemini: "channels.protocolTarget.gemini",
 };
 
 export function AddChannelDialog({
@@ -294,6 +303,31 @@ export function AddChannelDialog({
               <small className="field-preview mono" title={endpointPreview.chat_url}>
                 {t("channels.endpointPreview", { url: endpointPreview.chat_url })}
               </small>
+              {/* What a client speaking a DIFFERENT protocol gets. "This upstream
+                  is OpenAI-shaped" does not answer for a Codex or Claude client,
+                  and the answer differs per type. */}
+              {endpointPreview.surfaces?.map((surface) => {
+                const targetLabel = PROTOCOL_TARGETS[endpointPreview.protocol ?? ""];
+                const target = targetLabel ? t(targetLabel) : (endpointPreview.protocol ?? "");
+                return (
+                  <small
+                    className="field-preview"
+                    key={`${surface.mode}:${surface.downstream?.join("+")}`}
+                  >
+                    {t(
+                      surface.mode === "native_fallback"
+                        ? "channels.surface.nativeFallback"
+                        : "channels.surface.translated",
+                      {
+                        clients: (surface.downstream ?? [])
+                          .map((id) => t(`channels.surface.client.${id}`))
+                          .join(" / "),
+                        target: target,
+                      },
+                    )}
+                  </small>
+                );
+              })}
               {endpointPreview.models_url ? (
                 <small className="field-preview mono" title={endpointPreview.models_url}>
                   {t("channels.endpointPreviewModels", { url: endpointPreview.models_url })}

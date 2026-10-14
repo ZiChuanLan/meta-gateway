@@ -2,8 +2,10 @@ package httpapi_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -76,63 +78,76 @@ func TestEndpointPreviewSpeaksTheChannelsProtocol(t *testing.T) {
 	base, _, _ := setupServer(t, "http://127.0.0.1:1")
 
 	cases := []struct {
-		name       string
-		url        string
-		typeHint   string
-		wantProto  string
-		wantChat   string
-		wantModels string
+		name         string
+		url          string
+		typeHint     string
+		wantProto    string
+		wantChat     string
+		wantModels   string
+		wantSurfaces []string
 	}{
 		{
 			name: "anthropic under a vendor mount prefix", url: "https://api.deepseek.com/anthropic",
 			typeHint: "anthropic", wantProto: "anthropic",
 			wantChat:   "https://api.deepseek.com/anthropic/v1/messages",
 			wantModels: "https://api.deepseek.com/anthropic/v1/models",
+			// An Anthropic upstream serves chat and Responses clients through the
+			// translation matrix; only Messages is native.
+			wantSurfaces: []string{"chat+responses:translated"},
 		},
 		{
 			name: "anthropic official root", url: "https://api.anthropic.com",
 			typeHint: "anthropic", wantProto: "anthropic",
-			wantChat:   "https://api.anthropic.com/v1/messages",
-			wantModels: "https://api.anthropic.com/v1/models",
+			wantChat:     "https://api.anthropic.com/v1/messages",
+			wantModels:   "https://api.anthropic.com/v1/models",
+			wantSurfaces: []string{"chat+responses:translated"},
 		},
 		{
 			name: "a pasted anthropic endpoint does not double the version", url: "https://api.anthropic.com/v1/messages",
 			typeHint: "anthropic", wantProto: "anthropic",
-			wantChat:   "https://api.anthropic.com/v1/messages",
-			wantModels: "https://api.anthropic.com/v1/models",
+			wantChat:     "https://api.anthropic.com/v1/messages",
+			wantModels:   "https://api.anthropic.com/v1/models",
+			wantSurfaces: []string{"chat+responses:translated"},
 		},
 		{
 			name: "openai compatible", url: "https://api.example.com",
 			typeHint: "openai-compatible", wantProto: "openai",
 			wantChat:   "https://api.example.com/v1/chat/completions",
 			wantModels: "https://api.example.com/v1/models",
+			// Chat is native here; Responses is probed natively and replayed on
+			// chat/completions, and Anthropic clients are converted to chat.
+			wantSurfaces: []string{"responses:native_fallback", "messages:translated"},
 		},
 		{
 			// A vendor brand still speaks OpenAI; only the base URL differs.
 			name: "deepseek brand", url: "https://api.deepseek.com",
 			typeHint: "deepseek", wantProto: "openai",
-			wantChat:   "https://api.deepseek.com/v1/chat/completions",
-			wantModels: "https://api.deepseek.com/v1/models",
+			wantChat:     "https://api.deepseek.com/v1/chat/completions",
+			wantModels:   "https://api.deepseek.com/v1/models",
+			wantSurfaces: []string{"responses:native_fallback", "messages:translated"},
 		},
 		{
 			name: "gemini rides its own version root and addresses the model", url: "https://generativelanguage.googleapis.com/v1beta",
 			typeHint: "gemini", wantProto: "gemini",
-			wantChat:   "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
-			wantModels: "https://generativelanguage.googleapis.com/v1beta/models",
+			wantChat:     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+			wantModels:   "https://generativelanguage.googleapis.com/v1beta/models",
+			wantSurfaces: []string{"chat+responses+messages:translated"},
 		},
 		{
 			// TypeSafe's endpoint comes from the provider profile, which is applied
 			// at save time — a root-only base must not preview `/v1/chat/completions`.
 			name: "provider profile owns the endpoint", url: "https://api.typesafe.ai",
 			typeHint: "typesafe", wantProto: "openai",
-			wantChat:   "https://api.typesafe.ai/v1/systemone",
-			wantModels: "https://api.typesafe.ai/v1/models",
+			wantChat:     "https://api.typesafe.ai/v1/systemone",
+			wantModels:   "https://api.typesafe.ai/v1/models",
+			wantSurfaces: []string{"responses:native_fallback", "messages:translated"},
 		},
 		{
 			name: "an unknown type falls back to the passthrough protocol", url: "https://api.example.com",
 			typeHint: "not-a-real-type", wantProto: "openai",
-			wantChat:   "https://api.example.com/v1/chat/completions",
-			wantModels: "https://api.example.com/v1/models",
+			wantChat:     "https://api.example.com/v1/chat/completions",
+			wantModels:   "https://api.example.com/v1/models",
+			wantSurfaces: []string{"responses:native_fallback", "messages:translated"},
 		},
 	}
 	for _, tc := range cases {
@@ -151,8 +166,31 @@ func TestEndpointPreviewSpeaksTheChannelsProtocol(t *testing.T) {
 			if got["models_url"] != tc.wantModels {
 				t.Errorf("%s models_url = %v, want %s", tc.url, got["models_url"], tc.wantModels)
 			}
+			if diff := surfaceSummary(got["surfaces"]); diff != strings.Join(tc.wantSurfaces, ",") {
+				t.Errorf("%s surfaces = %v, want %v", tc.url, diff, tc.wantSurfaces)
+			}
 		})
 	}
+}
+
+// surfaceSummary flattens the preview's adaptation rows into "down+stream:mode"
+// strings so a case can state the whole answer on one line.
+func surfaceSummary(raw any) string {
+	rows, _ := raw.([]any)
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		entry, ok := row.(map[string]any)
+		if !ok {
+			continue
+		}
+		downstreams, _ := entry["downstream"].([]any)
+		names := make([]string, 0, len(downstreams))
+		for _, name := range downstreams {
+			names = append(names, fmt.Sprint(name))
+		}
+		out = append(out, strings.Join(names, "+")+":"+fmt.Sprint(entry["mode"]))
+	}
+	return strings.Join(out, ",")
 }
 
 // adminGet fetches an admin endpoint with an explicit token.
