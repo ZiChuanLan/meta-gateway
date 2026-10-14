@@ -128,7 +128,6 @@ export const en: Dict = {
   "billing.account": "Account #{id}",
   "billing.priceLocation": "Edit prices from Charge settings in model details.",
   "billing.nativeBalance": "Account balance: {value}",
-  "billing.balanceUnknown": "Account balance unknown",
   "billing.refreshFailed": "Refresh failed; showing last successful snapshot",
   "billing.routeTab": "Routing",
   "billing.quoteUnavailable": "This price cannot be read directly: {status}",
@@ -3723,12 +3722,7 @@ export const en: Dict = {
   "observation.retainedSnapshot": "This collection failed; showing the last successful snapshot:",
   "observation.collected": "{count} models in the latest successful collection",
   "observation.listHint":
-    "This is the site's published model list; “Route links” shows the routes already attached, and the ones without a route can be attached right here.",
-  "observation.availability": "Availability",
-  "observation.links": "Route links",
-  "observation.adopt": "Attach",
-  "observation.adoptHint":
-    "Create the route for this model and attach the channels that serve it (the same rule as the models page's one-click attach).",
+    "This is the site's published model list; “Availability details” is what this site records for the model — open it for the sources and the per-bucket history. Bulk select attaches routes for the models that have none.",
   "observation.bulkAdopt": "Attach routes",
   "observation.adoptDone": "Attached {created} models",
   "observation.adoptPartial": "Attached {created}, {failed} failed",

@@ -118,7 +118,6 @@ export const zh: Dict = {
   "billing.account": "账户 #{id}",
   "billing.priceLocation": "价格请从模型详情的「收费设置」编辑。",
   "billing.nativeBalance": "账户余额：{value}",
-  "billing.balanceUnknown": "账户余额未知",
   "billing.refreshFailed": "刷新失败，保留最后一次结果",
   "billing.routeTab": "路由",
   "billing.quoteUnavailable": "这个价看不懂，没法直接用：{status}",
@@ -3472,12 +3471,7 @@ export const zh: Dict = {
   "observation.retainedSnapshot": "本轮采集失败，下面仍是上次成功采集的数据：",
   "observation.collected": "本次成功采集到 {count} 个模型",
   "observation.listHint":
-    "这里列出站点真实公布的模型；「路由关联」显示已接入的路由，还没有路由的可以在这里直接接入。",
-  "observation.availability": "可用性",
-  "observation.links": "路由关联",
-  "observation.adopt": "接入",
-  "observation.adoptHint":
-    "给这个模型建一条路由，并把提供它的渠道挂上去（与模型页「一键挂载」同一套规则）。",
+    "这里列出站点真实公布的模型；「可用性详情」是本站对这个模型的可用性记录，点开可看来源与逐段历史。批量选择可以给还没有路由的模型直接接入路由。",
   "observation.bulkAdopt": "接入路由",
   "observation.adoptDone": "已接入 {created} 个模型",
   "observation.adoptPartial": "接入 {created} 个，失败 {failed} 个",

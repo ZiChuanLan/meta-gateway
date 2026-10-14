@@ -90,24 +90,23 @@
    switch. The hint used to be a paragraph of its own with nothing beside it. */
 .observation-table-bar { display: flex; align-items: center; gap: 10px; margin: 2px 0 10px; }
 .observation-table-bar .observation-list-hint { margin: 0; }
-/* Only three of the four columns exist when no site publishes a reading; the
-   grid has to follow, or the price would land in the availability slot. */
-.observation-table[data-columns="3"] .observation-model { grid-template-columns: minmax(145px,1fr) minmax(100px,.7fr) minmax(80px,.6fr); }
 .observation-table[data-bulk="1"] .observation-model-name { gap: 8px; }
 .observation-model-name { display: flex; align-items: flex-start; gap: 8px; }
 .observation-model-name > div { min-width: 0; }
 .observation-model.is-selected { background: var(--surface-subtle); }
-.observation-routed-elsewhere { font-size: 11px; color: var(--muted-strong); }
 /* "0 collected" with a reason: quiet, but the first thing under the count. */
 .observation-zero-reason { margin: 2px 0 10px; font-size: 12px; line-height: 1.6; color: var(--muted-strong); }
-.observation-model { display: grid; grid-template-columns: minmax(145px,1fr) 124px minmax(100px,.7fr) minmax(80px,.6fr); gap: 16px; align-items: center; min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--line); }
+/* The last column is the model's availability readout: a reading where the site
+   publishes one, a dash where it does not, and the details dialog either way. */
+.observation-model { display: grid; grid-template-columns: minmax(145px,1fr) minmax(100px,.7fr) 124px; gap: 16px; align-items: center; min-width: 0; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .observation-model.is-header { position: sticky; top: 0; z-index: 2; background: var(--surface-subtle); border-bottom: 1px solid var(--line-strong); font-size: 11px; color: var(--muted-strong); padding-top: 9px; padding-bottom: 9px; }
 .observation-model-name { min-width: 0; }
 .observation-model-name code { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .observation-model-name small, .observation-price small { display: block; margin-top: 5px; font-size: 11px; color: var(--muted-strong); }
 .observation-price { font-size: 12px; font-variant-numeric: tabular-nums; min-width: 0; }
-.observation-model-links { display: flex; gap: 7px; flex-direction: column; align-items: flex-start; font-size: 11px; min-width: 0; overflow-wrap: anywhere; }
-.observation-model-links .button { font-size: 11px; min-height: 26px; padding: 4px 0; }
+.observation-availability { min-width: 0; }
+.observation-billing { margin-top: 6px; }
+.observation-billing .button { font-size: 11px; min-height: 26px; padding: 4px 0; }
 .observation-policy, .observation-maintenance { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 24px; font-size: 12px; }
 .observation-policy > summary, .observation-maintenance > summary { cursor: pointer; color: var(--muted-strong); }
 .observation-policy-fields { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; margin: 18px 0; }
@@ -123,10 +122,7 @@
   .member-row.has-availability, :root[data-appearance="classic"] .member-row.has-availability { grid-template-columns: auto minmax(0,1fr) auto; }
   .member-availability { grid-column: 2; grid-row: 2; }
   .member-row.has-availability .member-controls { grid-column: 3; grid-row: 1 / span 2; }
-  .observation-model { grid-template-columns: minmax(140px,1fr) 124px minmax(80px,.65fr); }
-  .observation-table[data-columns="3"] .observation-model { grid-template-columns: minmax(140px,1fr) minmax(80px,.65fr); }
-  .observation-model-links { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; }
-  .observation-model.is-header > :last-child { display: none; }
+  .observation-model { grid-template-columns: minmax(140px,1fr) minmax(80px,.65fr) 124px; }
 }
 @media (max-width: 760px) {
   /* One column on a phone: the page scrolls, the panes do not. */
@@ -139,9 +135,11 @@
   .observation-model.is-header { position: static; }
   .observation-detail-head { flex-wrap: wrap; }
   .observation-model { grid-template-columns: minmax(0,1fr) 124px; gap: 10px; }
-  .observation-model.is-header > :nth-child(n+3) { display: none; }
+  /* The chip takes the right rail beside the model name, so the price header is
+     the one that has to go: the availability header stays above the chip. */
+  .observation-model.is-header > :nth-child(2) { display: none; }
   .observation-price { grid-column: 1; }
-  .observation-model-links { grid-column: 2; flex-direction: column; align-items: flex-start; }
+  .observation-availability { grid-column: 2; }
   .observation-policy-fields { grid-template-columns: repeat(2,minmax(0,1fr)); }
   .channel-model-row.is-alias.has-availability { grid-template-columns: auto minmax(0,1fr); }
   .channel-model-row.is-alias.has-availability .availability-indicator, .channel-model-row.is-alias.has-availability .channel-model-alias { grid-column: 2; }

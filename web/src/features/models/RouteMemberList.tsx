@@ -276,22 +276,26 @@ export function RouteMemberList(props: RouteMemberListProps) {
                     </span>
                   </>
                 ) : null}
-                <span className="member-finance" title={financeInfo?.observed_at ?? ""}>
-                  {" · "}
-                  {financeInfo?.balance_known && financeInfo.unit && financeInfo.quota_per_unit > 0
-                    ? t("billing.nativeBalance", {
-                        value: nativeAmount(
-                          financeInfo.balance / financeInfo.quota_per_unit,
-                          financeInfo.unit,
-                          t("billing.credit"),
-                        ),
-                      })
-                    : t("billing.balanceUnknown")}
-                  {financeInfo?.balance_status === "stale" ||
-                  financeInfo?.balance_status === "refresh_failed"
-                    ? ` · ${t("billing.refreshFailed")}`
-                    : null}
-                </span>
+                {/* A balance nobody could read says nothing: “unknown” is not an
+                    answer an operator can act on, and the row is here for routing. */}
+                {financeInfo?.balance_known &&
+                financeInfo.unit &&
+                financeInfo.quota_per_unit > 0 ? (
+                  <span className="member-finance" title={financeInfo.observed_at ?? ""}>
+                    {" · "}
+                    {t("billing.nativeBalance", {
+                      value: nativeAmount(
+                        financeInfo.balance / financeInfo.quota_per_unit,
+                        financeInfo.unit,
+                        t("billing.credit"),
+                      ),
+                    })}
+                    {financeInfo.balance_status === "stale" ||
+                    financeInfo.balance_status === "refresh_failed"
+                      ? ` · ${t("billing.refreshFailed")}`
+                      : null}
+                  </span>
+                ) : null}
                 {entry.fail_count > 0
                   ? ` · ${t(activeCooldown ? "routing.failCount" : "routing.failureHistory", {
                       count: entry.fail_count,

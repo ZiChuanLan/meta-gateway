@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
-import { Download, RefreshCw, Search, Settings2, Wand2 } from "lucide-react";
+import { Download, RefreshCw, Search, Settings2 } from "lucide-react";
 import { ApiError, api } from "../../api/client";
 import type {
   SiteObservation,
@@ -365,10 +365,6 @@ export function SiteObservationWorkspace({
     ? items.filter((item) => item.site_id === selected.site_id).length
     : 0;
   const reason = siteModels === 0 ? zeroReason(selected) : null;
-  // The availability column only exists where there is a reading to show: a
-  // column of dashes is a column of nothing, and it costs the width the model
-  // names and prices need.
-  const showsAvailability = visible.some((item) => item.series.ratio != null);
   // What the bulk bar acts on: the routes the picked models already reach, and
   // the ones they do not reach yet.
   const selectedItems = items.filter((item) => selectedModels.has(item.id));
@@ -706,22 +702,19 @@ export function SiteObservationWorkspace({
                       </Button>
                     </div>
                   ) : null}
-                  <div className="observation-table" data-columns={showsAvailability ? 4 : 3}>
+                  <div className="observation-table">
                     <div className="observation-model is-header">
                       <span>{t("common.model")}</span>
-                      {showsAvailability ? <span>{t("observation.availability")}</span> : null}
                       <span>{t("modelsPage.siteProbe.colPrice")}</span>
-                      <span>{t("observation.links")}</span>
+                      <span>{t("availability.details")}</span>
                     </div>
                     {visible.map((item) => (
                       <ObservationRow
                         key={item.id}
                         item={item}
                         links={linksOf(item)}
-                        showsAvailability={showsAvailability}
                         bulkSelect={bulkSelect}
                         selected={selectedModels.has(item.id)}
-                        adopting={adopt.isPending}
                         routedElsewhere={
                           linksOf(item).length === 0 && routedNames.has(item.raw_model)
                         }
@@ -733,7 +726,6 @@ export function SiteObservationWorkspace({
                             return next;
                           })
                         }
-                        onAdopt={() => adopt.mutate([item])}
                         onOpenBilling={(member) =>
                           setBilling({
                             model: member.route,
@@ -827,29 +819,22 @@ export function SiteObservationWorkspace({
 function ObservationRow({
   item,
   links,
-  showsAvailability,
   bulkSelect,
   selected,
-  adopting,
   routedElsewhere,
   onToggleSelected,
-  onAdopt,
   onOpenBilling,
 }: {
   item: SiteObservation;
   links: SiteProbeRow[];
-  showsAvailability: boolean;
   bulkSelect: boolean;
   selected: boolean;
-  adopting: boolean;
   /** The name has a route somewhere, but not on this site. */
   routedElsewhere: boolean;
   onToggleSelected: () => void;
-  onAdopt: () => void;
   onOpenBilling: (member: SiteProbeRow["members"][number] & { route: string }) => void;
 }) {
   const { t } = useI18n();
-  const linked = new Set(links.map((row) => row.route));
   const members = [
     ...new Map(
       links
@@ -872,18 +857,12 @@ function ObservationRow({
           <code title={item.raw_model}>{item.raw_model}</code>
           {item.group_name ? <small>{item.group_name}</small> : null}
           {item.weak_evidence ? <small>{t("modelsPage.siteProbe.weakEvidence")}</small> : null}
+          {/* Routing state stayed in the panel after the route column became the
+              availability one: it is what tells the operator whether this name
+              still needs attaching before the bulk bar is used. */}
+          {routedElsewhere ? <small>{t("observation.routedElsewhere")}</small> : null}
         </div>
       </div>
-      {showsAvailability ? (
-        <AvailabilityIndicator
-          item={{
-            model: item.raw_model,
-            site_id: item.site_id,
-            primary: item.series.ratio !== null ? item.series : null,
-            evidence: [item.series],
-          }}
-        />
-      ) : null}
       <div className="observation-price">
         <span>
           {item.price.unparsed ? (
@@ -902,47 +881,39 @@ function ObservationRow({
             {t(item.price.mode === "fixed" ? "observation.perRequest" : "observation.perMillion")}
           </small>
         ) : null}
+        {/* The member's charge rule follows the price it adopts — it used to live
+            in the route column, which is this model's availability now. One entry
+            point, not one button per channel: the same model served by three
+            channels would stack three buttons and bury the row. */}
+        {members.length ? (
+          <div className="observation-billing">
+            {members.length === 1 ? (
+              <Button variant="quiet" onClick={() => onOpenBilling(members[0]!)}>
+                {t("billing.open")}
+              </Button>
+            ) : (
+              <ActionMenu
+                label={`${t("billing.open")} · ${members.length}`}
+                title={t("billing.open")}
+                items={members.map((member) => ({
+                  key: String(member.member_id),
+                  label: member.channel_name,
+                  onSelect: () => onOpenBilling(member),
+                }))}
+              />
+            )}
+          </div>
+        ) : null}
       </div>
-      <div className="observation-model-links">
-        {[...linked].map((route) => (
-          <Link key={route} to={`/models?model=${encodeURIComponent(route)}`}>
-            {route}
-          </Link>
-        ))}
-        {/* A model nothing routes yet is the one case where this column used to
-            be blank; it now offers the action it implies. */}
-        {linked.size === 0 && !routedElsewhere ? (
-          <Button
-            variant="quiet"
-            icon={<Wand2 size={13} />}
-            title={t("observation.adoptHint")}
-            disabled={adopting}
-            onClick={onAdopt}
-          >
-            {t("observation.adopt")}
-          </Button>
-        ) : null}
-        {routedElsewhere ? (
-          <span className="observation-routed-elsewhere">{t("observation.routedElsewhere")}</span>
-        ) : null}
-        {/* One entry point, not one button per channel: the same model served by
-            three channels used to stack three "billing rule" buttons and bury
-            the row. A single menu names the channel when it asks which one. */}
-        {members.length === 1 ? (
-          <Button variant="quiet" onClick={() => onOpenBilling(members[0]!)}>
-            {t("billing.open")}
-          </Button>
-        ) : members.length > 1 ? (
-          <ActionMenu
-            label={`${t("billing.open")} · ${members.length}`}
-            title={t("billing.open")}
-            items={members.map((member) => ({
-              key: String(member.member_id),
-              label: member.channel_name,
-              onSelect: () => onOpenBilling(member),
-            }))}
-          />
-        ) : null}
+      <div className="observation-availability">
+        <AvailabilityIndicator
+          item={{
+            model: item.raw_model,
+            site_id: item.site_id,
+            primary: item.series.ratio !== null ? item.series : null,
+            evidence: [item.series],
+          }}
+        />
       </div>
     </div>
   );

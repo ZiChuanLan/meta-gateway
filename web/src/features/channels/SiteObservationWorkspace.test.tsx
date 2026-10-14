@@ -305,14 +305,29 @@ it("explains the directory import before it writes anything", async () => {
   expect(dialog).toHaveTextContent(/are never created/);
 });
 
+it("offers each collected model's availability details from its row", async () => {
+  backend({ items: 3 });
+  mount();
+  await screen.findByText("model-01");
+  const header = document.querySelector(".observation-model.is-header") as HTMLElement;
+  expect(header.textContent).not.toContain("Route links");
+  expect(header.textContent).toContain("Availability details");
+  fireEvent.click(screen.getByRole("button", { name: "Availability details model-01" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog).toHaveTextContent(/Availability details · model-01/);
+});
+
 it("adopts a model as two calls: create the route, then attach what serves it", async () => {
   // Creating a route with an empty auto-match list attaches nothing, so the
   // attach has to be the follow-up call — the empty list *there* is what means
-  // "every channel that serves this name".
+  // "every channel that serves this name". The bulk bar is the only attach the
+  // catalogue offers now: the last column is the model's availability.
   const actions = backend({ items: 3 });
   mount();
   await screen.findByText("model-01");
-  fireEvent.click(screen.getAllByRole("button", { name: "Attach" })[0]!);
+  fireEvent.click(screen.getByRole("button", { name: "Bulk select" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "model-01" }));
+  fireEvent.click(screen.getByRole("button", { name: "Attach routes" }));
   await waitFor(() => expect(actions.createRoute).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(actions.autoMatch).toHaveBeenCalledTimes(1));
   const createBody = JSON.parse(
