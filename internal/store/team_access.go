@@ -43,7 +43,8 @@ func (s *DownstreamKeyStore) ResolveTeamAccess(key *domain.DownstreamKey) (*doma
 		a.MemberIDs[id] = true
 	}
 	planID := key.TeamPlanID
-	if planID == 0 {
+	implicit := planID == 0
+	if implicit {
 		// Every user has at most one default arrangement (partial unique index),
 		// and keys that never chose a plan ride it. Its absence is the normal
 		// case for a member who never rearranged anything, not an error.
@@ -51,6 +52,13 @@ func (s *DownstreamKeyStore) ResolveTeamAccess(key *domain.DownstreamKey) (*doma
 	}
 	if planID != 0 {
 		if canRoute == 0 {
+			// Revoking personal routing withdraws the arrangement, not the key.
+			// Only a key that explicitly bound a plan is refused, so unbinding
+			// (plan_id=0) stays a way out; a key riding its own default plan just
+			// stops applying it and falls back to the site's own members and order.
+			if implicit {
+				return a, nil
+			}
 			return nil, errors.New("personal routing permission revoked")
 		}
 		var raw string
