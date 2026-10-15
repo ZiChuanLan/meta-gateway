@@ -37,6 +37,14 @@ func TestClientFamilyClassification(t *testing.T) {
 		"GeminiCLI/0.62.0/gemini-3-pro (win32; x64; interactive)":                        "gemini-cli",
 		"opencode/1.18.34 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14":               "opencode",
 		"deepseek-harness/0.2.0-rc.2 (+https://github.com/deepseek-ai/deepseek-harness)": "dsh",
+		// The AI-Agent product — the cross-tool convention for a client to say
+		// what it is. It wins over the signatures, including a generic one:
+		// `node/...` on its own would be filed as node.
+		"node/22.11.0 AI-Agent/kiro":           "kiro",
+		"amp/1.0 AI-Agent/amp runtime/bun/1.3": "amp",
+		"foo/1.2.3 AI-Agent/codex":             "codex",
+		// A name outside the known set is not trusted as a bucket key of its own.
+		"foo/1.2.3 AI-Agent/made-up-cli": "unknown",
 		// The editors/extensions that lead with `<tool>/<version>`, from their
 		// own sources (see the doc comment on ClientFamily for the pointers).
 		"Cline/3.39.2":           "cline",
@@ -124,6 +132,15 @@ func TestClientFamilyOf(t *testing.T) {
 	req.Header.Set("User-Agent", "my-private-fork/0.1")
 	if got := ClientFamilyOf(req); got != "anthropic" {
 		t.Fatalf("unknown ua + anthropic protocol → %q", got)
+	}
+	// X-Meta-Client stays the first word: it is the channel this gateway
+	// documents for operators, and it accepts names from the same set as the
+	// AI-Agent product does.
+	req = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	req.Header.Set("X-Meta-Client", "goose")
+	req.Header.Set("User-Agent", "foo/1.0 AI-Agent/codex")
+	if got := ClientFamilyOf(req); got != "goose" {
+		t.Fatalf("X-Meta-Client did not win over AI-Agent: %q", got)
 	}
 }
 

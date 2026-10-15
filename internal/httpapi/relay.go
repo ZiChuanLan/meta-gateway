@@ -1138,6 +1138,10 @@ const streamEstimateBytesPerToken = 4
 // The raw User-Agent rides along on the same row (proxy_logs.client_ua), so an
 // unknown client stays answerable instead of merely unnamed.
 //
+// A caller that says who it is wins over every signature here: the AI-Agent
+// product first (see aiAgentMarker), then the X-Meta-Client header upstream of
+// this function. The signatures exist for the clients that say nothing.
+//
 // The signatures are the ones the clients actually send — captured from the
 // installed CLIs on 2026-10-15 by pointing each one at a header-echo server:
 //
@@ -1161,6 +1165,9 @@ func ClientFamily(userAgent string) string {
 	ua := strings.ToLower(strings.TrimSpace(userAgent))
 	if ua == "" {
 		return "unknown"
+	}
+	if agent, ok := aiAgentMarker(ua); ok {
+		return agent
 	}
 	switch {
 	// Claude Code sends `claude-cli/<ver> (external, cli|sdk-cli)`; the
@@ -1318,14 +1325,55 @@ func ClientFamilyOf(r *http.Request) string {
 }
 
 // knownClientFamilies is the validated set for X-Meta-Client and the bucket
-// dimension; keep in sync with ClientFamily's outputs.
+// dimension; keep in sync with ClientFamily's outputs. It doubles as the set of
+// agent names accepted from an AI-Agent product, so an operating client can
+// also declare itself with a name the gateway has no signature for.
 var knownClientFamilies = []string{
 	"claude-code", "claude-desktop", "codex", "gemini-cli", "opencode", "dsh",
 	"cline", "roo-code", "goose", "librechat", "open-webui",
 	"cherry-studio", "lobe", "chatbox", "nextchat", "opencat", "kilo-code",
 	"copilot", "cursor", "windsurf", "pi", "anthropic", "openai-python",
 	"openai", "cli", "python", "node", "postman", "insomnia", "browser",
+	// Named only by the AI-Agent marker: the agents the cross-tool detector
+	// lists which this gateway has no User-Agent signature for.
+	"amp", "antigravity", "augment", "copilot-cli", "cowork", "cursor-cli",
+	"grok", "kiro", "replit",
 	"unknown",
+}
+
+// aiAgentMarker reads the AI-Agent product out of a User-Agent.
+//
+// It is the one identity signal the agent tooling agreed on: a client that
+// knows it is an agent appends a second product to its UA --
+// `foo/1.2.3 AI-Agent/codex` -- with the marker mirroring the AI_AGENT
+// environment variable. Pi, Codex, Gemini CLI, Claude Code, opencode, Cursor
+// CLI and Copilot CLI are all in that name set. A client saying who it is beats
+// any signature this file could carry, so the marker is read before them, and
+// leaving it out would mean ignoring the only cross-tool convention that exists
+// for exactly this question.
+//
+// Names outside knownClientFamilies are ignored rather than trusted, the same
+// rule X-Meta-Client follows: the family is a log dimension, so an arbitrary
+// token must not be able to invent a new bucket. The raw User-Agent is stored
+// on the row either way, so an unexpected name is still readable.
+//
+// The product is looked for anywhere in the header (the convention asks for two
+// products, but an agent that also appends its runtime is still an agent), and
+// matching is case-insensitive, like the rest of this file, because clients
+// assemble this header by hand.
+func aiAgentMarker(ua string) (string, bool) {
+	for _, product := range strings.Fields(ua) {
+		name, ok := strings.CutPrefix(product, "ai-agent/")
+		if !ok {
+			continue
+		}
+		for _, known := range knownClientFamilies {
+			if name == known {
+				return known, true
+			}
+		}
+	}
+	return "", false
 }
 
 // sseKeepaliveInterval is how long a streaming response may stay silent

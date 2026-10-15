@@ -252,6 +252,8 @@ export interface RequestRow {
   key_name?: string;
   /** Client family guessed from the relay User-Agent, as shown in the admin log list. */
   client_family?: string;
+  /** The raw User-Agent the family was read from; shown when the family is unknown. */
+  client_ua?: string;
 }
 export interface UserModel {
   supports_thinking?: number;

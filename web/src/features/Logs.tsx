@@ -192,6 +192,20 @@ function ChainStep({
 }
 
 /**
+ * The client column names the caller. The family is used when the classifier
+ * knows it — one scannable word per client — and the raw User-Agent when it does
+ * not: "unknown" is the same answer for every caller nobody has taught the
+ * list, while the string still says who called. The full string is the cell's
+ * tooltip either way, so a versioned name is always one hover away. Rows written
+ * before `client_ua` existed carry only the bucket.
+ */
+function clientLabel(log: ProxyLog): string {
+  const family = log.client_family ?? "";
+  if (family && family !== "unknown") return family;
+  return log.client_ua || family || "";
+}
+
+/**
  * The request chain, reconstructed after the fact: client token → ingress path
  * → route → channel → upstream URL. Every hop links to the object that owns it,
  * because "which token was this and where did it go" is the first question
@@ -761,7 +775,7 @@ export function LogsView({
       log.latency_ms,
       log.first_byte_ms ?? "",
       log.cost ?? "",
-      log.client_family ?? "",
+      clientLabel(log),
       ...(caps.upstream ? [log.upstream_request_id ?? ""] : []),
       log.request_id,
       ...(caps.upstream ? [log.error_detail ?? log.error_brief ?? ""] : []),
@@ -1325,7 +1339,11 @@ export function LogsView({
                             {log.cost != null ? formatCost(log.cost) : "—"}
                           </td>
                         ) : null}
-                        <td>{log.client_family || "—"}</td>
+                        <td className="log-client-cell">
+                          <span className="log-client" title={log.client_ua || undefined}>
+                            {clientLabel(log) || "—"}
+                          </span>
+                        </td>
                       </tr>
                       {expandedRequest === log.request_id ? (
                         <tr className="log-decision-row">

@@ -419,6 +419,13 @@ func TestTeamRoutingGrantRevocationAndUsageOwnership(t *testing.T) {
 	if !bytes.Contains(records, []byte(`"tokens":3`)) {
 		t.Fatalf("request usage %s", records)
 	}
+	// The member sees the same client identity the admin list shows, the raw
+	// User-Agent included: the family is "unknown" for anything the classifier
+	// was not taught (this test client is not in the list), and the string is
+	// what still answers "which client sent this".
+	if !bytes.Contains(records, []byte(`"client_family":"unknown"`)) || !bytes.Contains(records, []byte(`"client_ua":"Go-http-client`)) {
+		t.Fatalf("client identity missing from the member's row: %s", records)
+	}
 	if string(bob.request("GET", "/me/requests", nil, 200)) != "[]\n" {
 		t.Fatal("another user's requests leaked")
 	}

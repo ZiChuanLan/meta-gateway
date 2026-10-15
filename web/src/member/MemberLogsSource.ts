@@ -70,5 +70,6 @@ function toProxyLog(row: RequestRow, index: number): ProxyLog {
     upstream_url: "",
     upstream_model: "",
     client_family: row.client_family ?? "",
+    client_ua: row.client_ua ?? "",
   };
 }

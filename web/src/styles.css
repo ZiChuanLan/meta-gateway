@@ -8045,6 +8045,16 @@ label.check input[type="checkbox"]:not(.switch) {
 .log-ttfb-cell {
   white-space: nowrap;
 }
+/* The client column: the family when the classifier knows it, otherwise the raw
+   User-Agent, which is long by nature and truncates instead of stretching the
+   table. The full string stays reachable as the cell's tooltip either way. */
+.log-client {
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .log-latency-bar {
   display: inline-block;
   width: 44px;

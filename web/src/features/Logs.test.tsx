@@ -281,6 +281,32 @@ describe("log row drill-down", () => {
     expect(within(details).getByText("100 / 20")).toBeInTheDocument();
   });
 
+  // "unknown" is the same answer for every caller the classifier has not been
+  // taught, so the column falls back to the raw User-Agent: a row still says who
+  // called instead of saying nothing. The family stays the label when it is
+  // known (above), which keeps one scannable word per recognized client.
+  it("names an unrecognized client by its raw User-Agent", async () => {
+    renderLogs("/logs", [
+      {
+        id: 6,
+        request_id: "req-unknown",
+        model: "gpt-5",
+        status: 200,
+        latency_ms: 100,
+        attempt: 1,
+        client_family: "unknown",
+        client_ua: "Zed/0.200.0",
+        created_at: "2026-09-30T10:00:00Z",
+      },
+    ]);
+    // The row arrives with the query; the client cell is the assertion.
+    await screen.findByText("gpt-5");
+    const cell = document.querySelector(".log-client") as HTMLElement;
+    expect(cell.textContent).toBe("Zed/0.200.0");
+    // The exact string stays one hover away for recognized clients too.
+    expect(cell).toHaveAttribute("title", "Zed/0.200.0");
+  });
+
   // The bare grey bar in front of the number was an unreadable scale: the
   // tooltip has to say what it measures and what the colours mean.
   it("explains the latency bar on hover", async () => {

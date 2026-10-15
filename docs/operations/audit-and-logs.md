@@ -70,6 +70,8 @@ curl -X POST -H "Authorization: Bearer <session_token>" \
 ### 客户端自报家门
 
 客户端可以带 `X-Meta-Client: <家族名>` 主动声明身份，优先级高于 User-Agent（值必须在已知家族名单内，否则忽略）。
+
+**AI 客户端的通用自报约定也被认**：User-Agent 里带第二个产品 `AI-Agent/<agent>`（如 `amplifier/1.0 AI-Agent/amp`，marker 对应 `AI_AGENT` 环境变量）时直接用该名字，优先级高于所有内置签名 —— 这是唯一一个跨工具约定好的"我是 AI agent"标记，`pi` / `codex` / `claude-code` / `opencode` / `gemini-cli` / `cursor-cli` / `copilot-cli` 等都在它的名字集合里；名字不在已知集合内则忽略（原始 UA 始终落在 `client_ua` 上）。`X-Meta-Client` 仍是最高优先级。
 网关自身识别不了的客户端，日志会照原样记下 `client_ua`，从它出发再补一条规则即可。
 
 ### 按维度钻取

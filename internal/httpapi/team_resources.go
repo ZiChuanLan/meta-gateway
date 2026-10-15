@@ -653,7 +653,8 @@ func (h *TeamHandler) myRequests(w http.ResponseWriter, r *http.Request) {
 		(SELECT SUM(cache_creation_tokens) FROM usage_records WHERE request_id=q.request_id AND user_id=q.user_id),
 		(SELECT COUNT(*) FROM proxy_logs WHERE request_id=q.request_id AND downstream_key_id=q.key_id),
 		COALESCE((SELECT name FROM downstream_keys WHERE id=q.key_id AND user_id=q.user_id),''),
-		COALESCE((SELECT client_family FROM proxy_logs WHERE request_id=q.request_id AND downstream_key_id=q.key_id ORDER BY id DESC LIMIT 1),'')
+		COALESCE((SELECT client_family FROM proxy_logs WHERE request_id=q.request_id AND downstream_key_id=q.key_id ORDER BY id DESC LIMIT 1),''),
+		COALESCE((SELECT client_ua FROM proxy_logs WHERE request_id=q.request_id AND downstream_key_id=q.key_id ORDER BY id DESC LIMIT 1),'')
 		FROM team_requests q WHERE `+where+` ORDER BY q.rowid DESC LIMIT 200`, args...)
 	if err != nil {
 		teamFail(w, 500, "load_failed")
@@ -676,16 +677,19 @@ func (h *TeamHandler) myRequests(w http.ResponseWriter, r *http.Request) {
 		CacheCreationTokens *int64   `json:"cache_creation_tokens"`
 		Attempts            int      `json:"attempts"`
 		KeyName             string   `json:"key_name"`
-		// ClientFamily is the coarse client classification from the relay's
-		// User-Agent sniffing, same value the admin log list shows. It rides
-		// along so a member can tell "which client sent this" without seeing
-		// anyone else's rows.
+		// ClientFamily / ClientUA identify the caller, same values the admin log
+		// list shows: the coarse family and the raw User-Agent it was read from.
+		// They ride along so a member can tell "which client sent this" without
+		// seeing anyone else's rows. The family is "unknown" whenever the
+		// classifier did not recognize the caller, which is exactly when the
+		// string is the only useful half.
 		ClientFamily string `json:"client_family,omitempty"`
+		ClientUA     string `json:"client_ua,omitempty"`
 	}
 	items := []item{}
 	for rows.Next() {
 		var v item
-		if rows.Scan(&v.RequestID, &v.KeyID, &v.Path, &v.Status, &v.Latency, &v.CreatedAt, &v.Model, &v.Tokens, &v.Cost, &v.PromptTokens, &v.CompletionTokens, &v.CacheReadTokens, &v.CacheCreationTokens, &v.Attempts, &v.KeyName, &v.ClientFamily) != nil {
+		if rows.Scan(&v.RequestID, &v.KeyID, &v.Path, &v.Status, &v.Latency, &v.CreatedAt, &v.Model, &v.Tokens, &v.Cost, &v.PromptTokens, &v.CompletionTokens, &v.CacheReadTokens, &v.CacheCreationTokens, &v.Attempts, &v.KeyName, &v.ClientFamily, &v.ClientUA) != nil {
 			teamFail(w, 500, "load_failed")
 			return
 		}
