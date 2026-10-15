@@ -16,12 +16,10 @@ import type {
 import { relativeTime } from "../../lib/format";
 import { AvailabilityIndicator } from "../../components/AvailabilityIndicator";
 import { Button, ConfirmDialog, Dialog, Empty, ErrorState, InfoTip } from "../../components/ui";
-import { ActionMenu } from "../../components/ActionMenu";
 import { useAdminMutation } from "../../hooks/useAdminMutation";
 import { useI18n } from "../../i18n";
 import { useSession } from "../../session";
 import { useToast } from "../../toast";
-import { BillingRuleDialog } from "../models/BillingRulePanel";
 
 const DEFAULT_POLICY: SiteProbePolicy = {
   ratio_threshold: 0.9,
@@ -340,13 +338,6 @@ export function SiteObservationWorkspace({
     },
     invalidateKeys: INVALIDATE,
   });
-  const [billing, setBilling] = useState<{
-    model: string;
-    memberId: number;
-    siteId: number;
-    upstreamModel: string;
-    channelName?: string;
-  } | null>(null);
   const previewKey = JSON.stringify([selected?.site_id, policy, report.dataUpdatedAt]);
   const previewKeyRef = useRef(previewKey);
   previewKeyRef.current = previewKey;
@@ -759,7 +750,6 @@ export function SiteObservationWorkspace({
                       <ObservationRow
                         key={item.id}
                         item={item}
-                        links={linksOf(item)}
                         bulkSelect={bulkSelect}
                         selected={selectedModels.has(item.id)}
                         routedElsewhere={
@@ -771,17 +761,6 @@ export function SiteObservationWorkspace({
                             if (next.has(item.id)) next.delete(item.id);
                             else next.add(item.id);
                             return next;
-                          })
-                        }
-                        onOpenBilling={(member) =>
-                          setBilling({
-                            model: member.route,
-                            memberId: member.member_id,
-                            siteId: item.site_id,
-                            upstreamModel: item.raw_model,
-                            // Without the channel name the member panel explains
-                            // its scope as “only affects 「」”, which names nothing.
-                            channelName: member.channel_name,
                           })
                         }
                       />
@@ -835,7 +814,6 @@ export function SiteObservationWorkspace({
           {importCatalog.error ? <ErrorState error={importCatalog.error} /> : null}
         </Dialog>
       ) : null}
-      {billing ? <BillingRuleDialog {...billing} onClose={() => setBilling(null)} /> : null}
       {pruneOpen ? (
         <ConfirmDialog
           title={t("modelsPage.siteProbe.prune")}
@@ -865,30 +843,19 @@ export function SiteObservationWorkspace({
 }
 function ObservationRow({
   item,
-  links,
   bulkSelect,
   selected,
   routedElsewhere,
   onToggleSelected,
-  onOpenBilling,
 }: {
   item: SiteObservation;
-  links: SiteProbeRow[];
   bulkSelect: boolean;
   selected: boolean;
   /** The name has a route somewhere, but not on this site. */
   routedElsewhere: boolean;
   onToggleSelected: () => void;
-  onOpenBilling: (member: SiteProbeRow["members"][number] & { route: string }) => void;
 }) {
   const { t } = useI18n();
-  const members = [
-    ...new Map(
-      links
-        .flatMap((row) => row.members.map((member) => ({ ...member, route: row.route })))
-        .map((member) => [member.member_id, member]),
-    ).values(),
-  ];
   return (
     <div className={`observation-model${bulkSelect && selected ? " is-selected" : ""}`}>
       <div className="observation-model-name">
@@ -928,37 +895,14 @@ function ObservationRow({
             {t(item.price.mode === "fixed" ? "observation.perRequest" : "observation.perMillion")}
           </small>
         ) : null}
-        {/* The member's charge rule follows the price it adopts — it used to live
-            in the route column, which is this model's availability now. One entry
-            point, not one button per channel: the same model served by three
-            channels would stack three buttons and bury the row. */}
-        {members.length ? (
-          <div className="observation-billing">
-            {members.length === 1 ? (
-              <Button variant="quiet" onClick={() => onOpenBilling(members[0]!)}>
-                {t("billing.open")}
-              </Button>
-            ) : (
-              <ActionMenu
-                label={`${t("billing.open")} · ${members.length}`}
-                title={t("billing.open")}
-                items={members.map((member) => ({
-                  key: String(member.member_id),
-                  label: member.channel_name,
-                  onSelect: () => onOpenBilling(member),
-                }))}
-              />
-            )}
-          </div>
-        ) : null}
       </div>
       <div className="observation-availability">
         <AvailabilityIndicator
           item={{
             model: item.raw_model,
             site_id: item.site_id,
-            primary: item.series.ratio !== null ? item.series : null,
-            evidence: [item.series],
+            primary: item.primary,
+            evidence: item.evidence,
           }}
         />
       </div>

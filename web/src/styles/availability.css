@@ -111,8 +111,6 @@
 .observation-model-name small, .observation-price small { display: block; margin-top: 5px; font-size: 11px; color: var(--muted-strong); }
 .observation-price { font-size: 12px; font-variant-numeric: tabular-nums; min-width: 0; }
 .observation-availability { min-width: 0; }
-.observation-billing { margin-top: 6px; }
-.observation-billing .button { font-size: 11px; min-height: 26px; padding: 4px 0; }
 .observation-policy, .observation-maintenance { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 24px; font-size: 12px; }
 .observation-policy > summary, .observation-maintenance > summary { cursor: pointer; color: var(--muted-strong); }
 .observation-policy-fields { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; margin: 18px 0; }

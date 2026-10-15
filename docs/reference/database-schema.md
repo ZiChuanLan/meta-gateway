@@ -6,7 +6,7 @@
 引擎是 SQLite（WAL 模式），迁移脚本是 `internal/store/NNN_*.sql`，按文件名的数字序执行。
 本页由生成器**实际迁移一个临时数据库再读回 schema**得出，所以它反映的是代码最终产生的结构，而不是对 SQL 文本的解析结果。
 
-当前：`internal/store/` 下 **138** 个 `.sql` 文件，其中 **138** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
+当前：`internal/store/` 下 **139** 个 `.sql` 文件，其中 **139** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
 
 ## 迁移铁律
 
@@ -26,7 +26,7 @@
 
 ## 表
 
-共 **64** 个表。
+共 **65** 个表。
 
 ### admin_totp · 4 列
 
@@ -856,6 +856,23 @@
 | `success_count` | INTEGER | 是 | 0 | — |
 | `failure_count` | INTEGER | 是 | 0 | — |
 
+### site_probe_external_history · 12 列
+
+| 列 | 类型 | NOT NULL | 默认值 | 主键 |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | — | — | 是 |
+| `site_id` | INTEGER | 是 | 0 | — |
+| `source` | TEXT | 是 | '' | — |
+| `raw_model` | TEXT | 是 | — | — |
+| `group_name` | TEXT | 是 | '' | — |
+| `ratio` | REAL | 是 | 0 | — |
+| `request_count` | INTEGER | 是 | 0 | — |
+| `success_count` | INTEGER | 是 | 0 | — |
+| `failure_count` | INTEGER | 是 | 0 | — |
+| `observed_at` | TEXT | 是 | '' | — |
+| `collected_at` | TEXT | 是 | datetime('now') | — |
+| `bucket_at` | TEXT | 是 | '' | — |
+
 ### site_probe_heartbeats · 8 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
@@ -1107,7 +1124,7 @@
 
 ## 索引
 
-共 **82** 个索引。
+共 **85** 个索引。
 
 | 索引 | 表 | 唯一 |
 | --- | --- | --- |
@@ -1175,11 +1192,14 @@
 | `idx_routes_model_pattern_unique` | `routes` | 是 |
 | `idx_site_announcements_order` | `site_announcements` | — |
 | `idx_site_probe_external_site` | `site_probe_external` | — |
+| `idx_site_probe_external_history_model` | `site_probe_external_history` | — |
+| `idx_site_probe_external_history_time` | `site_probe_external_history` | — |
 | `idx_site_beats_time` | `site_probe_heartbeats` | — |
 | `idx_site_probe_runs_site` | `site_probe_runs` | — |
 | `idx_site_probe_samples_model` | `site_probe_samples` | — |
 | `idx_site_probe_samples_partition` | `site_probe_samples` | — |
 | `idx_site_probe_samples_run` | `site_probe_samples` | — |
+| `idx_site_probe_samples_time` | `site_probe_samples` | — |
 | `idx_sites_base_url` | `sites` | — |
 | `team_code_redemptions_once` | `team_code_redemptions` | 是 |
 | `team_identities_subject` | `team_identities` | 是 |

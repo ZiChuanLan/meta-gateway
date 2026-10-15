@@ -453,6 +453,152 @@ func (db *DB) ReplaceSiteProbeExternal(rows []SiteProbeExternal) error {
 	return nil
 }
 
+// SiteProbeSeriesPoint is one bucket of a site's own collections: every reading
+// that landed in the bucket, added up, with the newest collection's time.
+//
+// A round publishes a window total rather than a delta, so adding two readings of
+// the same bucket counts overlapping windows. The colour a tick gets reads the
+// ratio, and that is what the site reported either way; the counts are what the
+// site said, never an invented number.
+type SiteProbeSeriesPoint struct {
+	SiteID    int64
+	SourceKey string
+	MonitorID string
+	At        time.Time
+	Samples   int
+	OK        int
+	// Ratio is the highest published ratio of the bucket, used only when the bucket
+	// carries no counts: a source that publishes a bare percentage still has a
+	// reading, and the cell drawn from it must not pretend to be one either.
+	Ratio float64
+}
+
+// bucketSeconds is one bucket of a series, in whole seconds. It matches the
+// geometry NewAvailabilitySeries gives the buckets these points land in: the
+// window split into as many parts.
+func bucketSeconds(since, until time.Time, buckets int) int64 {
+	if buckets <= 0 || !until.After(since) {
+		return 0
+	}
+	return int64(until.Sub(since).Seconds()) / int64(buckets)
+}
+
+// SiteProbeSampleHistory folds the collections inside a window into one point per
+// (site, monitor, bucket).
+//
+// The folding happens in SQL: the samples table holds one row per monitored model
+// per round for the whole retention window — hundreds of thousands of rows on a
+// busy install — while this reader only ever draws a fixed number of buckets.
+func (db *DB) SiteProbeSampleHistory(since, until time.Time, buckets int) ([]SiteProbeSeriesPoint, error) {
+	width := bucketSeconds(since, until, buckets)
+	if width <= 0 {
+		return nil, nil
+	}
+	rows, err := db.Query(`SELECT site_id, source_key, monitor_id, SUM(samples), SUM(up_count), MAX(ratio), MAX(observed_at)
+		FROM site_probe_samples WHERE observed_at>=? AND observed_at<?
+		GROUP BY site_id, source_key, monitor_id, CAST((CAST(strftime('%s',observed_at) AS INTEGER)-?)/? AS INTEGER)
+		ORDER BY site_id, monitor_id, MAX(observed_at)`,
+		formatProbeTime(since), formatProbeTime(until), since.Unix(), width)
+	if err != nil {
+		return nil, fmt.Errorf("site probe: sample history: %w", err)
+	}
+	defer rows.Close()
+	out := []SiteProbeSeriesPoint{}
+	for rows.Next() {
+		var point SiteProbeSeriesPoint
+		if err := rows.Scan(&point.SiteID, &point.SourceKey, &point.MonitorID, &point.Samples, &point.OK,
+			&point.Ratio, scanTime(&point.At)); err != nil {
+			return nil, fmt.Errorf("site probe: scan sample history: %w", err)
+		}
+		out = append(out, point)
+	}
+	return out, rows.Err()
+}
+
+// ExternalHistoryPoint is one third-party reading, as this gateway collected it:
+// the ratio the directory published and the counts behind it.
+type ExternalHistoryPoint struct {
+	SiteID       int64
+	Source       string
+	RawModel     string
+	GroupName    string
+	Ratio        float64
+	RequestCount int
+	SuccessCount int
+	FailureCount int
+	ObservedAt   string
+	// At is when the reading was collected, not when the directory says it
+	// observed it: a directory lags its own timestamps by hours, and a reading we
+	// have just pulled belongs to now.
+	At time.Time
+}
+
+// AppendSiteProbeExternalHistory records the readings of one sync.
+//
+// One row per pair per hour, replaced by the newest reading in that hour: the
+// directory publishes a rolling window total, so keeping every sync would
+// multiply it, and keeping only the first would freeze an hour at what it looked
+// like when the hour started.
+func (db *DB) AppendSiteProbeExternalHistory(points []ExternalHistoryPoint) error {
+	if len(points) == 0 {
+		return nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("site probe: external history begin: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	stmt, err := tx.Prepare(`INSERT INTO site_probe_external_history
+		(site_id, source, raw_model, group_name, ratio, request_count, success_count, failure_count,
+		 observed_at, collected_at, bucket_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(site_id, raw_model, bucket_at) DO UPDATE SET
+			ratio=excluded.ratio, request_count=excluded.request_count,
+			success_count=excluded.success_count, failure_count=excluded.failure_count,
+			group_name=excluded.group_name, source=excluded.source,
+			observed_at=excluded.observed_at, collected_at=excluded.collected_at`)
+	if err != nil {
+		return fmt.Errorf("site probe: prepare external history: %w", err)
+	}
+	defer func() { _ = stmt.Close() }()
+	for _, point := range points {
+		at := point.At
+		if at.IsZero() {
+			at = time.Now().UTC()
+		}
+		if _, err := stmt.Exec(point.SiteID, point.Source, point.RawModel, point.GroupName, point.Ratio,
+			point.RequestCount, point.SuccessCount, point.FailureCount, point.ObservedAt,
+			formatProbeTime(at), formatProbeTime(at.Truncate(time.Hour))); err != nil {
+			return fmt.Errorf("site probe: insert external history: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// ListSiteProbeExternalHistory returns the readings collected inside the window,
+// oldest first, so a caller can let the newest one win its bucket.
+func (db *DB) ListSiteProbeExternalHistory(since time.Time) ([]ExternalHistoryPoint, error) {
+	rows, err := db.Query(`SELECT site_id, source, raw_model, group_name, ratio, request_count,
+			success_count, failure_count, observed_at, collected_at
+		FROM site_probe_external_history WHERE collected_at>=? ORDER BY collected_at`,
+		formatProbeTime(since))
+	if err != nil {
+		return nil, fmt.Errorf("site probe: list external history: %w", err)
+	}
+	defer rows.Close()
+	out := []ExternalHistoryPoint{}
+	for rows.Next() {
+		var point ExternalHistoryPoint
+		if err := rows.Scan(&point.SiteID, &point.Source, &point.RawModel, &point.GroupName, &point.Ratio,
+			&point.RequestCount, &point.SuccessCount, &point.FailureCount, &point.ObservedAt,
+			scanTime(&point.At)); err != nil {
+			return nil, fmt.Errorf("site probe: scan external history: %w", err)
+		}
+		out = append(out, point)
+	}
+	return out, rows.Err()
+}
+
 // ListSiteProbeExternal returns the current third-party snapshot.
 func (db *DB) ListSiteProbeExternal() ([]SiteProbeExternal, error) {
 	rows, err := db.Query(`SELECT source, site_id, site_name, site_host, raw_model, group_name, ratio,
@@ -536,6 +682,12 @@ func (db *DB) PruneSiteProbe(retentionDays int) (runs int64, samples int64, err 
 	defer tx.Rollback()
 	if _, err := tx.Exec(`DELETE FROM site_probe_heartbeats WHERE probed_at < ?`, cutoff); err != nil {
 		return 0, 0, err
+	}
+	// The third-party history is a reading log the console draws, not evidence a
+	// verdict rests on, so it follows the probe retention rather than a window of
+	// its own.
+	if _, err := tx.Exec(`DELETE FROM site_probe_external_history WHERE collected_at < ?`, cutoff); err != nil {
+		return 0, 0, fmt.Errorf("site probe: prune external history: %w", err)
 	}
 	sampleResult, err := tx.Exec(`DELETE FROM site_probe_samples WHERE run_id IN (SELECT id FROM site_probe_runs WHERE started_at < ?)`, cutoff)
 	if err != nil {

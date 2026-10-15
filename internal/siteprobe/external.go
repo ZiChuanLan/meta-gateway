@@ -193,8 +193,33 @@ func (s *Service) SyncExternal(ctx context.Context, catalogURL string) (int, err
 		s.recordExternalSync(catalogURL, s.now(), 0, err)
 		return 0, err
 	}
+	// The snapshot is replaced every sync; the history is what a reader can look
+	// back on. Only readings that are evidence are logged — a pair the directory
+	// says it cannot see is its own "no reading", and writing it as a 0% would
+	// turn "we have nothing" into "it is broken".
+	if err := s.db.AppendSiteProbeExternalHistory(evidenceHistory(readings)); err != nil {
+		// The snapshot is already the truth this panel shows; a history write that
+		// failed is logged and left to the next sync rather than failing the round.
+		s.logger.Warn("site probe: external history write failed", "error", err)
+	}
 	s.recordExternalSync(catalogURL, s.now(), len(readings), nil)
 	return len(readings), nil
+}
+
+// evidenceHistory turns a fetched snapshot into the history rows worth keeping.
+func evidenceHistory(readings []store.SiteProbeExternal) []store.ExternalHistoryPoint {
+	points := make([]store.ExternalHistoryPoint, 0, len(readings))
+	for _, row := range readings {
+		if !externalReadingIsUsable(row) {
+			continue
+		}
+		points = append(points, store.ExternalHistoryPoint{
+			SiteID: row.SiteID, Source: row.Source, RawModel: row.RawModel, GroupName: row.GroupName,
+			Ratio: row.Ratio, RequestCount: row.RequestCount, SuccessCount: row.SuccessCount,
+			FailureCount: row.FailureCount, ObservedAt: row.ObservedAt,
+		})
+	}
+	return points
 }
 
 // SyncExternalNow refreshes the snapshot regardless of the scheduled cadence.

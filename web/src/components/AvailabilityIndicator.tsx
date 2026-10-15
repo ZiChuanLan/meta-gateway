@@ -173,7 +173,9 @@ function AvailabilityDetails({ item, onClose }: { item: AvailabilityItem; onClos
                     total: series.samples,
                     failed: series.failed,
                   })
-                : t("availability.aggregateOnly")}
+                : series.ratio != null
+                  ? t("availability.aggregateOnly")
+                  : t("availability.noDataHint")}
               {series.ignored > 0
                 ? ` · ${t("availability.ignored", { count: series.ignored })}`
                 : ""}

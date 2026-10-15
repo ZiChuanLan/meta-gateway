@@ -215,7 +215,7 @@ func TestThirdPartySeriesPrintsTheDirectoryNumbers(t *testing.T) {
 		ObservedAt: now.Add(-3 * time.Hour).Format(time.RFC3339),
 		SnapshotAt: now.Add(-2 * time.Minute),
 	}
-	series := thirdPartySeries(reading, now.Add(-24*time.Hour), now)
+	series := thirdPartySeries(reading, nil, now.Add(-24*time.Hour), now)
 	if series.Stale {
 		t.Fatal("a reading whose snapshot was refreshed two minutes ago was called expired")
 	}
@@ -236,7 +236,7 @@ func TestThirdPartySeriesPrintsTheDirectoryNumbers(t *testing.T) {
 	// What does go stale is our copy: a snapshot nobody could refresh for longer
 	// than a probe round is allowed to go stale.
 	reading.SnapshotAt = now.Add(-3 * time.Hour)
-	if !thirdPartySeries(reading, now.Add(-24*time.Hour), now).Stale {
+	if !thirdPartySeries(reading, nil, now.Add(-24*time.Hour), now).Stale {
 		t.Fatal("a snapshot three hours old was treated as current")
 	}
 }

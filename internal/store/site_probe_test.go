@@ -186,3 +186,54 @@ func TestRecentSamplesReadIsSiteScopedAndIndexOnly(t *testing.T) {
 		t.Fatalf("partition lookup plan = %q, want the covering index", detail)
 	}
 }
+
+// TestExternalHistoryKeepsOneReadingPerHour pins the shape of the directory's
+// history: one row per (pair, hour), the hour's newest reading winning it, because
+// the directory publishes a rolling-window total that must not be multiplied by
+// the number of pulls it took to see it.
+func TestExternalHistoryKeepsOneReadingPerHour(t *testing.T) {
+	db := openTestDB(t)
+	hour := time.Now().UTC().Truncate(time.Hour)
+	points := []store.ExternalHistoryPoint{
+		{SiteID: 3, RawModel: "glm-5.2", Ratio: 0.9, RequestCount: 100, SuccessCount: 90,
+			At: hour.Add(5 * time.Minute)},
+		{SiteID: 3, RawModel: "glm-5.2", Ratio: 0.95, RequestCount: 140, SuccessCount: 133,
+			At: hour.Add(20 * time.Minute)},
+		{SiteID: 3, RawModel: "glm-5.2", Ratio: 0.5, RequestCount: 4, SuccessCount: 2,
+			At: hour.Add(-90 * time.Minute)},
+	}
+	if err := db.AppendSiteProbeExternalHistory(points); err != nil {
+		t.Fatal(err)
+	}
+	history, err := db.ListSiteProbeExternalHistory(time.Now().UTC().Add(-24 * time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("history = %d rows (%+v), want one per hour", len(history), history)
+	}
+	newest := history[len(history)-1]
+	if newest.Ratio != 0.95 || newest.RequestCount != 140 {
+		t.Fatalf("newest = %+v, want the hour's newest reading", newest)
+	}
+
+	// A reading past the retention window is the pruner's business, like the rest
+	// of the probe history.
+	if err := db.AppendSiteProbeExternalHistory([]store.ExternalHistoryPoint{
+		{SiteID: 3, RawModel: "ancient", Ratio: 0.1, At: time.Now().UTC().AddDate(0, 0, -30)},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := db.PruneSiteProbe(7); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := db.ListSiteProbeExternalHistory(time.Now().UTC().AddDate(0, 0, -365))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, point := range kept {
+		if point.RawModel == "ancient" {
+			t.Fatal("a reading past the retention window survived the prune")
+		}
+	}
+}

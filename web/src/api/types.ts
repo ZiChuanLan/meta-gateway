@@ -2100,7 +2100,16 @@ export interface SiteObservation {
   group_name?: string;
   price: SiteProbePrice;
   observed_at: string;
+  /** The site's own published reading — what the panel's filters count. */
   series: AvailabilitySeries;
+  /**
+   * Every reading behind this row, in the order the console shows them: our own
+   * traffic, our probes, the site's own word, then the third-party directory.
+   * The same four the model page shows for the same model.
+   */
+  evidence: AvailabilitySeries[];
+  /** The reading the table cell quotes (the first unstale one with a ratio). */
+  primary: AvailabilitySeries | null;
   weak_evidence: boolean;
 }
 export interface SiteObservations {

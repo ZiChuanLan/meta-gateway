@@ -71,6 +71,12 @@ type Dependencies struct {
 	SetAuditRetention   func(days, rows int)
 }
 
+// compressedAdminTypes is the content-type allowlist for admin response
+// compression. JSON only — the admin subtree also serves the live-trace stream
+// (text/event-stream), which must reach the client as it is written; chi picks
+// the encoder by response Content-Type, so this list is what excludes it.
+var compressedAdminTypes = []string{"application/json"}
+
 // New creates a fully wired chi.Router.
 func New(cfg *config.Config, db *store.DB, enc *crypto.Encrypter) http.Handler {
 	return NewWithDependencies(cfg, db, enc, Dependencies{})
@@ -265,6 +271,12 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	relayLimiter := ratelimit.New(cfg.RelayRatePerMinute, cfg.RelayRateBurst)
 	adminGroup.Use(rateLimitMiddleware(adminLimiter, func(*http.Request) int64 { return 0 }, "admin", metrics))
 	adminGroup.Use(withAdminBodyLimit(cfg.MaxAdminBodyBytes))
+	// The console's readers ship whole tables (the site-observation panel alone is
+	// ~1.2 MB per fetch, refetched every minute) and are reached over links far
+	// thinner than the gateway's own. chi picks the encoder by response
+	// Content-Type, so the allowlist below is also what keeps the live-trace
+	// stream (text/event-stream, same subtree) uncompressed and unbuffered.
+	adminGroup.Use(chimw.Compress(5, compressedAdminTypes...))
 	teamHandler.RegisterAdmin(adminGroup)
 	teamHandler.RegisterPublic(r)
 	// /app was the member app's own SPA. There is one console now, so these

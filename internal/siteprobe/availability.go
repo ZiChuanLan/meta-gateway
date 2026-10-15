@@ -10,15 +10,22 @@ import (
 )
 
 type Observation struct {
-	ID           string                    `json:"id"`
-	SiteID       int64                     `json:"site_id"`
-	RawModel     string                    `json:"raw_model"`
-	MonitorID    string                    `json:"monitor_id,omitempty"`
-	GroupName    string                    `json:"group_name,omitempty"`
-	Price        store.SiteProbePrice      `json:"price"`
-	ObservedAt   time.Time                 `json:"observed_at"`
-	Series       *store.AvailabilitySeries `json:"series"`
-	WeakEvidence bool                      `json:"weak_evidence"`
+	ID         string                    `json:"id"`
+	SiteID     int64                     `json:"site_id"`
+	RawModel   string                    `json:"raw_model"`
+	MonitorID  string                    `json:"monitor_id,omitempty"`
+	GroupName  string                    `json:"group_name,omitempty"`
+	Price      store.SiteProbePrice      `json:"price"`
+	ObservedAt time.Time                 `json:"observed_at"`
+	Series     *store.AvailabilitySeries `json:"series"`
+	// Evidence is every reading behind this row, in the order the console shows
+	// them: our own relay traffic, our probes, the site's own word, then the
+	// third-party directory — the same four the model page shows for the same
+	// model. Series is the third of those alone, because the panel filters rows by
+	// what the site itself claims.
+	Evidence     []*store.AvailabilitySeries `json:"evidence"`
+	Primary      *store.AvailabilitySeries   `json:"primary"`
+	WeakEvidence bool                        `json:"weak_evidence"`
 }
 type Observations struct {
 	Items []Observation `json:"items"`
@@ -52,6 +59,7 @@ func (s *Service) Observations(hours int) (*Observations, error) {
 	if err != nil {
 		return nil, err
 	}
+	evidence := s.observationEvidence(sites, since, until)
 	for _, site := range sites {
 		resolved := resolveProbeSource(site)
 		status := SiteStatus{SiteID: site.ID, SiteName: site.Name, Kind: resolved.ProbeSourceKind, URL: resolved.ProbeSourceURL,
@@ -87,14 +95,23 @@ func (s *Service) Observations(hours int) (*Observations, error) {
 			}
 			series.Observe(beat.At, outcome, "", until)
 		}
+		// The site's own collections, drawn as one cell per collection. They used to
+		// be a single number with an empty timeline: a site that said 99.2% was a bar
+		// with no history beside sources that have one, and "when did it turn red"
+		// had no answer on the panel that exists to answer it.
+		identity := sourceIdentity(site)
 		for _, sample := range samples[site.ID] {
 			// A changed source has no observations until its first successful collection.
-			if sample.SourceKey != "" && sample.SourceKey != sourceIdentity(site) {
+			if sample.SourceKey != "" && sample.SourceKey != identity {
 				continue
 			}
 			series := byMonitor[sample.MonitorID]
 			if series == nil {
 				series = store.NewAvailabilitySeries("site", "site_model", since, until)
+				byMonitor[sample.MonitorID] = series
+				// The totals are the newest reading's own numbers, and its face is the
+				// time it was collected: adding up what a site published across
+				// collections would print a total no site ever reported.
 				if sample.RatioKnown || sample.Samples > 0 {
 					ratio := sample.Ratio
 					series.Ratio = &ratio
@@ -104,11 +121,20 @@ func (s *Service) Observations(hours int) (*Observations, error) {
 					at := sample.ObservedAt
 					series.LastAt = &at
 				}
+				for _, point := range evidence.samples[siteMonitorKey(site.ID, identity, sample.MonitorID)] {
+					ok, readings := readingCell(point.Ratio, point.OK, point.Samples)
+					series.ObserveReading(point.At, ok, readings, until)
+				}
 			}
 			series.Stale = sample.ObservedAt.IsZero() || until.Sub(sample.ObservedAt) > StaleAfter
-			result.Items = append(result.Items, Observation{ID: fmt.Sprintf("%d/%s/%s/%s", site.ID, sample.RawModel, sample.GroupName, sample.MonitorID),
+			item := Observation{ID: fmt.Sprintf("%d/%s/%s/%s", site.ID, sample.RawModel, sample.GroupName, sample.MonitorID),
 				SiteID: site.ID, RawModel: sample.RawModel, MonitorID: sample.MonitorID, GroupName: sample.GroupName,
-				Price: sample.Price, ObservedAt: sample.ObservedAt, Series: series, WeakEvidence: sample.WeakEvidence})
+				Price: sample.Price, ObservedAt: sample.ObservedAt, Series: series, WeakEvidence: sample.WeakEvidence}
+			folded := coreModelName(sample.RawModel)
+			item.Evidence = siteModelEvidence(evidence.traffic[site.ID][folded], evidence.probes[site.ID][folded], series,
+				externalSeries(evidence.external, evidence.externalHistory, site.ID, sample.RawModel, since, until))
+			item.Primary = primaryOf(item.Evidence)
+			result.Items = append(result.Items, item)
 		}
 	}
 	return result, nil
@@ -158,6 +184,7 @@ func (s *Service) Availability(routeIDs []int64, channelID int64, group string, 
 	if err != nil {
 		return nil, err
 	}
+	externalHistory := s.externalHistoryIndex(since)
 	report := &AvailabilityReport{Members: []AvailabilityItem{}, Models: []AvailabilityItem{}, Routes: []AvailabilityItem{}, Since: since, Until: until}
 	wanted := map[int64]bool{}
 	for _, id := range routeIDs {
@@ -191,7 +218,7 @@ func (s *Service) Availability(routeIDs []int64, channelID int64, group string, 
 					item.Evidence = append(item.Evidence, series)
 				}
 			}
-			addSiteEvidence(&item, observations, external, since, until)
+			addSiteEvidence(&item, observations, external, externalHistory, since, until)
 			choosePrimary(&item)
 			report.Members = append(report.Members, item)
 		}
@@ -234,7 +261,7 @@ func (s *Service) Availability(routeIDs []int64, channelID int64, group string, 
 						item.Evidence = append(item.Evidence, series)
 					}
 				}
-				addSiteEvidence(&item, observations, external, since, until)
+				addSiteEvidence(&item, observations, external, externalHistory, since, until)
 				choosePrimary(&item)
 				report.Models = append(report.Models, item)
 			}
@@ -242,7 +269,7 @@ func (s *Service) Availability(routeIDs []int64, channelID int64, group string, 
 	}
 	return report, nil
 }
-func addSiteEvidence(item *AvailabilityItem, observations *Observations, external map[string]ExternalReading, since, until time.Time) {
+func addSiteEvidence(item *AvailabilityItem, observations *Observations, external map[string]ExternalReading, externalHistory map[string][]store.ExternalHistoryPoint, since, until time.Time) {
 	exact, folded := []Observation{}, []Observation{}
 	for _, o := range observations.Items {
 		if o.SiteID != item.SiteID {
@@ -263,9 +290,21 @@ func addSiteEvidence(item *AvailabilityItem, observations *Observations, externa
 	} else if len(matches) > 1 {
 		item.Ambiguous = true
 	}
-	if reading := externalFor(item.SiteID, item.Model, external); reading != nil {
-		item.Evidence = append(item.Evidence, thirdPartySeries(*reading, since, until))
+	if series := externalSeries(external, externalHistory, item.SiteID, item.Model, since, until); series != nil {
+		item.Evidence = append(item.Evidence, series)
 	}
+}
+
+// externalSeries renders the directory's reading for one (site, published model),
+// with every reading this gateway has pulled for that pair as its history. A pair
+// the directory publishes nothing usable about has no series at all: its absence
+// is not a 0%.
+func externalSeries(external map[string]ExternalReading, history map[string][]store.ExternalHistoryPoint, siteID int64, rawModel string, since, until time.Time) *store.AvailabilitySeries {
+	reading := externalFor(siteID, rawModel, external)
+	if reading == nil {
+		return nil
+	}
+	return thirdPartySeries(*reading, history[externalKey(siteID, rawModel)], since, until)
 }
 
 // thirdPartySeries renders one directory reading as evidence.
@@ -275,8 +314,16 @@ func addSiteEvidence(item *AvailabilityItem, observations *Observations, externa
 // its own copy: a snapshot it has not been able to refresh for longer than a probe
 // round is allowed to go stale is marked as such, because "we could not pull
 // this" is a fact about us — and the only one that should wear 「已过期」.
-func thirdPartySeries(reading ExternalReading, since, until time.Time) *store.AvailabilitySeries {
+//
+// The timeline is our own log of what the directory said, one cell per pull, which
+// is the one thing a snapshot of a rolling window cannot answer for itself: the
+// totals above are the newest reading's, not the sum of readings that overlap.
+func thirdPartySeries(reading ExternalReading, points []store.ExternalHistoryPoint, since, until time.Time) *store.AvailabilitySeries {
 	series := store.NewAvailabilitySeries(SourceWatchbot, "site_model", since, until)
+	for _, point := range points {
+		ok, samples := readingCell(point.Ratio, point.SuccessCount, point.RequestCount)
+		series.ObserveReading(point.At, ok, samples, until)
+	}
 	ratio := reading.Ratio
 	series.Ratio = &ratio
 	series.Samples = reading.RequestCount
@@ -288,11 +335,173 @@ func thirdPartySeries(reading ExternalReading, since, until time.Time) *store.Av
 	}
 	return series
 }
-func choosePrimary(item *AvailabilityItem) {
-	for _, s := range item.Evidence {
-		if s.Ratio != nil && !s.Stale {
-			item.Primary = s
-			return
+
+// availabilityBrokenBelow is the ratio this console's time cells call broken —
+// the amber/red boundary its own banding uses. It is repeated here for the one
+// case where a cell has to be drawn from a claim instead of from counts.
+const availabilityBrokenBelow = 0.8
+
+// readingCell turns a reading that may publish only a ratio into the counts a time
+// cell can carry.
+//
+// A cell is drawn as ok over samples, so a source that publishes a bare
+// percentage — the directory's success_rate on most of its rows, a transit
+// snapshot's availability — has nothing to draw with, and those rows are the
+// majority. One reading is exactly one sample: green when the number is at or
+// above the band this console calls broken, red below. Inventing request counts
+// so that a percentage can be drawn as a ratio would print numbers no source ever
+// published.
+//
+// A source that publishes neither counts nor a number has no reading at all — a
+// site's price table lists models it reports no health for — and gets no cell: a
+// missing measurement is not a failed one.
+func readingCell(ratio float64, ok, samples int) (int, int) {
+	if samples > 0 {
+		return ok, samples
+	}
+	if ratio <= 0 {
+		return 0, 0
+	}
+	if ratio >= availabilityBrokenBelow {
+		return 1, 1
+	}
+	return 0, 1
+}
+
+// observationEvidence is every reading the console shows next to a site's own
+// word, all of it keyed by (site, model): our relay traffic, our probes, the
+// site's collections, and the third-party directory's readings.
+type observationEvidence struct {
+	traffic         map[int64]map[string]*store.AvailabilitySeries
+	probes          map[int64]map[string]*store.AvailabilitySeries
+	samples         map[string][]store.SiteProbeSeriesPoint
+	external        map[string]ExternalReading
+	externalHistory map[string][]store.ExternalHistoryPoint
+}
+
+// siteMonitorKey identifies one monitor's timeline: the site, the source it was
+// collected from — a site re-pointed at a different source must not show the
+// previous source's history under the new one — and the monitor itself.
+func siteMonitorKey(siteID int64, sourceKey, monitorID string) string {
+	return fmt.Sprintf("%d|%s|%s", siteID, sourceKey, monitorID)
+}
+
+// observationEvidence collects the readings that are not the site's own claim.
+//
+// None of it may fail the panel: a source that cannot be read is logged and left
+// out, and the row keeps whatever else it has — the same posture the report takes
+// towards traffic and third-party readings.
+func (s *Service) observationEvidence(sites []domain.Site, since, until time.Time) *observationEvidence {
+	evidence := &observationEvidence{
+		traffic:         map[int64]map[string]*store.AvailabilitySeries{},
+		probes:          map[int64]map[string]*store.AvailabilitySeries{},
+		samples:         map[string][]store.SiteProbeSeriesPoint{},
+		external:        map[string]ExternalReading{},
+		externalHistory: map[string][]store.ExternalHistoryPoint{},
+	}
+	// A row collected before the source was recorded carries no key of its own,
+	// and the aggregate path treats those as belonging to whatever the site
+	// collects from now. The timeline has to read them the same way.
+	identity := make(map[int64]string, len(sites))
+	for _, site := range sites {
+		identity[site.ID] = sourceIdentity(site)
+	}
+	if series, err := s.db.SiteAvailabilityTraffic(since, until); err != nil {
+		s.logger.Warn("site probe: traffic evidence unavailable", "error", err)
+	} else {
+		evidence.traffic = foldSiteSeries(series)
+	}
+	if series, err := s.db.SiteAvailabilityProbes(since, until); err != nil {
+		s.logger.Warn("site probe: probe evidence unavailable", "error", err)
+	} else {
+		evidence.probes = foldSiteSeries(series)
+	}
+	if points, err := s.db.SiteProbeSampleHistory(since, until, store.AvailabilityBuckets); err != nil {
+		s.logger.Warn("site probe: collection history unavailable", "error", err)
+	} else {
+		for _, point := range points {
+			source := point.SourceKey
+			if source == "" {
+				source = identity[point.SiteID]
+			}
+			key := siteMonitorKey(point.SiteID, source, point.MonitorID)
+			evidence.samples[key] = append(evidence.samples[key], point)
 		}
 	}
+	if readings, err := s.externalIndex(); err != nil {
+		s.logger.Warn("site probe: external readings unavailable", "error", err)
+	} else {
+		evidence.external = readings
+	}
+	evidence.externalHistory = s.externalHistoryIndex(since)
+	return evidence
+}
+
+// externalHistoryIndex loads the readings this gateway has pulled, keyed the same
+// way the snapshot is (see externalKey) so a row finds its own history.
+func (s *Service) externalHistoryIndex(since time.Time) map[string][]store.ExternalHistoryPoint {
+	points, err := s.db.ListSiteProbeExternalHistory(since)
+	if err != nil {
+		s.logger.Warn("site probe: external history unavailable", "error", err)
+		return map[string][]store.ExternalHistoryPoint{}
+	}
+	out := make(map[string][]store.ExternalHistoryPoint, len(points))
+	for _, point := range points {
+		key := externalKey(point.SiteID, point.RawModel)
+		out[key] = append(out[key], point)
+	}
+	return out
+}
+
+// foldSiteSeries re-keys a (site, upstream model) series map by the folded model
+// name, merging what folds together.
+//
+// A site publishes the bare upstream name while our catalog names each alias with
+// a namespace (cn:glm-5.2, global:glm-5.2), so one published model can be reached
+// under several names. The console shows it as one row, and dropping either set of
+// calls would understate what we sent.
+func foldSiteSeries(in map[int64]map[string]*store.AvailabilitySeries) map[int64]map[string]*store.AvailabilitySeries {
+	out := make(map[int64]map[string]*store.AvailabilitySeries, len(in))
+	for siteID, byModel := range in {
+		folded := make(map[string]*store.AvailabilitySeries, len(byModel))
+		for model, series := range byModel {
+			key := coreModelName(model)
+			if existing, found := folded[key]; found {
+				existing.Merge(series)
+				continue
+			}
+			folded[key] = series
+		}
+		out[siteID] = folded
+	}
+	return out
+}
+
+// siteModelEvidence assembles one row's readings in the order the console shows
+// them: our traffic, our probes, the site's own word, then the directory. A source
+// with nothing to say is left out rather than sent as an empty series, which the
+// panel would draw as a source that answered.
+func siteModelEvidence(traffic, probes, own, external *store.AvailabilitySeries) []*store.AvailabilitySeries {
+	out := []*store.AvailabilitySeries{}
+	for _, series := range []*store.AvailabilitySeries{traffic, probes, own, external} {
+		if series != nil {
+			out = append(out, series)
+		}
+	}
+	return out
+}
+
+func choosePrimary(item *AvailabilityItem) {
+	item.Primary = primaryOf(item.Evidence)
+}
+
+// primaryOf is the reading a table cell quotes: the first unstale one that carries
+// a ratio. A source that has nothing to say must not shadow one that has.
+func primaryOf(evidence []*store.AvailabilitySeries) *store.AvailabilitySeries {
+	for _, series := range evidence {
+		if series != nil && series.Ratio != nil && !series.Stale {
+			return series
+		}
+	}
+	return nil
 }

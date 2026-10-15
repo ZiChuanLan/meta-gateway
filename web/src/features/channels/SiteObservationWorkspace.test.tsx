@@ -41,23 +41,40 @@ function backend({
   thirdParty?: SiteObservations["third_party"];
 } = {}) {
   const siteRow = { ...site, ...sitePatch };
+  const siteSeries = {
+    source: "site" as const,
+    scope: "site_model",
+    ratio: null,
+    samples: 0,
+    ok: 0,
+    failed: 0,
+    ignored: 0,
+    stale: false,
+    buckets: [],
+    paths: [],
+  };
   const items = Array.from({ length: itemCount }, (_, i) => ({
     id: `1/${i}`,
     site_id: 1,
     raw_model: `model-${String(i + 1).padStart(2, "0")}`,
     observed_at: "2026-10-11T00:00:00Z",
     price: {},
-    series: {
-      source: "site" as const,
-      scope: "site_model",
-      ratio: null,
-      samples: 0,
-      ok: 0,
-      failed: 0,
-      ignored: 0,
-      stale: false,
-      buckets: [],
-      paths: [],
+    series: siteSeries,
+    // The panel draws every reading behind a row, not just the site's own word:
+    // traffic, probes, the site's collection, then the directory (see the
+    // observation-evidence test in internal/siteprobe).
+    evidence: [
+      { ...siteSeries, source: "traffic" as const, ratio: 0.98, samples: 55, ok: 54, failed: 1 },
+      { ...siteSeries, source: "probe" as const, ratio: 1, samples: 3, ok: 3 },
+      siteSeries,
+    ],
+    primary: {
+      ...siteSeries,
+      source: "traffic" as const,
+      ratio: 0.98,
+      samples: 55,
+      ok: 54,
+      failed: 1,
     },
     weak_evidence: false,
   }));
@@ -358,6 +375,11 @@ it("offers each collected model's availability details from its row", async () =
   fireEvent.click(screen.getByRole("button", { name: "Availability details model-01" }));
   const dialog = await screen.findByRole("dialog");
   expect(dialog).toHaveTextContent(/Availability details · model-01/);
+  // The row shows every reading behind the model, not just the site's own word:
+  // the panel used to render one source while the model page rendered four.
+  expect(dialog).toHaveTextContent("Real traffic");
+  expect(dialog).toHaveTextContent("Active probe");
+  expect(dialog).toHaveTextContent("Site reported");
 });
 
 it("adopts a model as two calls: create the route, then attach what serves it", async () => {
