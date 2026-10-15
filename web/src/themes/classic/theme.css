@@ -4925,14 +4925,19 @@
 }
 :root[data-appearance="classic"] .webdav-mode-card > span {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  /* Title over hint, not beside it: side by side the four-character titles wrap
+     mid-word while the hint keeps the width. Two lines per card reads as one
+     2×2 block — a row of titles, a row of descriptions. */
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 44px;
 }
 :root[data-appearance="classic"] .webdav-mode-card strong {
-  display: inline;
+  display: block;
   min-width: 0;
   font-size: 13px;
   line-height: 1.35;
