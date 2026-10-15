@@ -1334,6 +1334,10 @@ var knownClientFamilies = []string{
 	"cherry-studio", "lobe", "chatbox", "nextchat", "opencat", "kilo-code",
 	"copilot", "cursor", "windsurf", "pi", "anthropic", "openai-python",
 	"openai", "cli", "python", "node", "postman", "insomnia", "browser",
+	// This console's own workbench traffic into the relay
+	// (web/src/features/workbench sets the header). It is the one caller the
+	// log can name for certain, since the page is ours.
+	"console",
 	// Named only by the AI-Agent marker: the agents the cross-tool detector
 	// lists which this gateway has no User-Agent signature for.
 	"amp", "antigravity", "augment", "copilot-cli", "cowork", "cursor-cli",

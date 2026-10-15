@@ -217,8 +217,13 @@ export function memberRunner(): WorkbenchRunner {
     return token;
   }
 
+  // The console's own calls into the relay. Without this header they are
+  // indistinguishable from any other browser holding a key, and this is the one
+  // caller whose identity the log can know for certain: it is our own page.
+  // `console` is one of the families the relay accepts from X-Meta-Client.
   const headers = (token: string, json: boolean) => ({
     Authorization: `Bearer ${token}`,
+    "X-Meta-Client": "console",
     ...(json ? { "Content-Type": "application/json" } : {}),
   });
 

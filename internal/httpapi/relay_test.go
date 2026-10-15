@@ -142,6 +142,13 @@ func TestClientFamilyOf(t *testing.T) {
 	if got := ClientFamilyOf(req); got != "goose" {
 		t.Fatalf("X-Meta-Client did not win over AI-Agent: %q", got)
 	}
+	// The console labels its own workbench traffic, so the operator can tell a
+	// test run of theirs from an external browser holding the same key.
+	req = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	req.Header.Set("X-Meta-Client", "console")
+	if got := ClientFamilyOf(req); got != "console" {
+		t.Fatalf("console header → %q", got)
+	}
 }
 
 func TestClientUAStringIsSanitizedAndCapped(t *testing.T) {
