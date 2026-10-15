@@ -37,6 +37,21 @@ func TestClientFamilyClassification(t *testing.T) {
 		"GeminiCLI/0.62.0/gemini-3-pro (win32; x64; interactive)":                        "gemini-cli",
 		"opencode/1.18.34 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14":               "opencode",
 		"deepseek-harness/0.2.0-rc.2 (+https://github.com/deepseek-ai/deepseek-harness)": "dsh",
+		// The editors/extensions that lead with `<tool>/<version>`, from their
+		// own sources (see the doc comment on ClientFamily for the pointers).
+		"Cline/3.39.2":           "cline",
+		"cline-vscode-extension": "cline",
+		"RooCode/3.22.6":         "roo-code",
+		"roo-code/3.22.6 (win32 10.0.26300; x64) node/22.11.0": "roo-code",
+		"goose/1.31.0 (+https://github.com/aaif-goose/goose)":  "goose",
+		"LibreChat/1.0":          "librechat",
+		"open-webui/openference": "open-webui",
+		// Self-hosted front ends with no UA of their own: Open WebUI sends
+		// aiohttp's default, and everything on httpx (LiteLLM, Dify,
+		// LangChain) sends `python-httpx/…`. Both are Python clients, the same
+		// granularity the list already had for `python-requests`.
+		"Python/3.11 aiohttp/3.9.1":            "python",
+		"python-httpx/0.27.0":                  "python",
 		"Anthropic/2.0":                        "anthropic",
 		"OpenAI/Python 1.30.0":                 "openai-python",
 		"OpenAI-API/1.0 ChatGPT/1.0":           "openai",

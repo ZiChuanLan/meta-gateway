@@ -62,7 +62,7 @@ curl -X POST -H "Authorization: Bearer <session_token>" \
 | `upstream_key_id` / `upstream_key_name` | 服务本次尝试的上游凭据 |
 | `key_fingerprint` | 同一把上游密钥的 sha256 前缀 |
 | `status` / `latency_ms` / `first_byte_ms` / `tps` | 结果与性能 |
-| `client_family` | 从 User-Agent 归一出客户端家族（`pi` / `claude-code` / `opencode` / `codex` / `gemini-cli` / `dsh` …，认不出的记 `unknown`，**不再一律记 `browser`**） |
+| `client_family` | 从 User-Agent 归一出客户端家族（`pi` / `claude-code` / `opencode` / `codex` / `gemini-cli` / `dsh` / `cline` / `roo-code` / `goose` / `librechat` …，认不出的记 `unknown`，**不再一律记 `browser`**）。签名取自客户端自己的源码或实测，不是猜的 |
 | `client_ua` | **原始 User-Agent**（截断 200 字符、剥离控制字符）。家族表只能收录被想到的客户端，认出并点名一个未知客户端靠的是这个字符串 |
 
 > 客户端家族是二分类的结果，原始 UA 是证据。日志展开区的「入口」那一跳优先显示原始 UA；两者都在，认错/认不出时才可追问。

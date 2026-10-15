@@ -1147,6 +1147,16 @@ const streamEstimateBytesPerToken = 4
 //	codex       codex_exec/0.155.1 (Windows 10.0.26300; x86_64) pebrel/2.2.0_…
 //	gemini-cli  GeminiCLI/0.62.0/gemini-3-pro (win32; x64; interactive)
 //	dsh         deepseek-harness/0.2.0-rc.2 (+https://github.com/deepseek-ai/deepseek-harness)
+//	cline       Cline/3.39.2            + x-title: Cline, http-referer: https://cline.bot
+//	roo-code    RooCode/3.22.6          + originator: roo-code
+//	goose       goose/1.31.0 (+https://github.com/aaif-goose/goose)
+//	librechat   LibreChat/1.0
+//
+// The last five come from their own sources rather than from a live capture:
+// cline/cline#4653 and src/core/api/cline-client-headers.ts, RooCodeInc/Roo-Code
+// src/api/providers/constants.ts, block/goose crates/goose/src/agents (GOOSE_USER_AGENT),
+// danny-avila/LibreChat's code-interpreter client. A UA the list does not place
+// is not a hole any more — it lands in client_ua verbatim.
 func ClientFamily(userAgent string) string {
 	ua := strings.ToLower(strings.TrimSpace(userAgent))
 	if ua == "" {
@@ -1169,6 +1179,23 @@ func ClientFamily(userAgent string) string {
 	// dsh identifies as DeepSeek's harness, not as "dsh".
 	case strings.Contains(ua, "deepseek-harness"):
 		return "dsh"
+	// The coding agents that lead with `<tool>/<version>`: Cline
+	// (`Cline/3.39.2`, and `cline-vscode-extension` in older builds), its
+	// widely-used fork Roo Code (`RooCode/3.22.6`, `roo-code/3.22.6 (os; arch)
+	// node/x`), Goose (`goose/1.31.0 (+https://github.com/aaif-goose/goose)`),
+	// LibreChat (`LibreChat/1.0`). Open WebUI has no distinctive UA of its own
+	// (it sends aiohttp's), so this only catches the deployments that followed
+	// the convention of setting one.
+	case strings.HasPrefix(ua, "cline"):
+		return "cline"
+	case strings.HasPrefix(ua, "roocode"), strings.HasPrefix(ua, "roo-code"):
+		return "roo-code"
+	case strings.HasPrefix(ua, "goose"):
+		return "goose"
+	case strings.HasPrefix(ua, "librechat"):
+		return "librechat"
+	case strings.HasPrefix(ua, "open-webui"):
+		return "open-webui"
 	// pi's own string is `pi (<os> <release>; <arch>)` — short enough that a
 	// substring test would also catch unrelated agents (`api/v1/…`), so it is
 	// anchored at the start of the UA.
@@ -1201,6 +1228,13 @@ func ClientFamily(userAgent string) string {
 	case strings.Contains(ua, "curl"), strings.Contains(ua, "wget"):
 		return "cli"
 	case strings.Contains(ua, "python-requests"):
+		return "python"
+	// The two Python HTTP clients that dominate self-hosted front ends: Open
+	// WebUI sends aiohttp's default UA (it has no distinctive one of its own,
+	// which is why "browser" was doubly wrong for it), and everything built on
+	// httpx — LiteLLM, Dify, LangChain — sends this one. Folding them into the
+	// existing python bucket keeps the granularity the list already had.
+	case strings.Contains(ua, "aiohttp"), strings.Contains(ua, "httpx"):
 		return "python"
 	case strings.Contains(ua, "node"), strings.Contains(ua, "axios"), strings.Contains(ua, "undici"):
 		return "node"
@@ -1287,6 +1321,7 @@ func ClientFamilyOf(r *http.Request) string {
 // dimension; keep in sync with ClientFamily's outputs.
 var knownClientFamilies = []string{
 	"claude-code", "claude-desktop", "codex", "gemini-cli", "opencode", "dsh",
+	"cline", "roo-code", "goose", "librechat", "open-webui",
 	"cherry-studio", "lobe", "chatbox", "nextchat", "opencat", "kilo-code",
 	"copilot", "cursor", "windsurf", "pi", "anthropic", "openai-python",
 	"openai", "cli", "python", "node", "postman", "insomnia", "browser",
