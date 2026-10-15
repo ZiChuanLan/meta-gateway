@@ -1,6 +1,7 @@
 package adapters
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -28,6 +29,24 @@ func NewExternalCheckinAdapter(name string, client *http.Client) *ExternalChecki
 		client = &http.Client{Transport: &http.Transport{ResponseHeaderTimeout: 15 * time.Second}}
 	}
 	return &ExternalCheckinAdapter{name: name, client: client}
+}
+
+// wafChallengeBody reports whether a 2xx response is a page rather than data.
+//
+// The content type decides when it is present, and the first bytes decide
+// otherwise: an edge cache occasionally drops the header, and a document that
+// starts with < is still a document.
+func wafChallengeBody(contentType string, body []byte) bool {
+	if strings.Contains(strings.ToLower(contentType), "text/html") {
+		return true
+	}
+	trimmed := bytes.TrimSpace(body)
+	for _, prefix := range []string{"<!doctype", "<html", "<script", "<?xml"} {
+		if len(trimmed) >= len(prefix) && strings.EqualFold(string(trimmed[:len(prefix)]), prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *ExternalCheckinAdapter) Name() string { return a.name }
@@ -86,7 +105,12 @@ func (a *ExternalCheckinAdapter) Checkin(ctx context.Context, input CheckinInput
 	}
 	base.Path = strings.TrimRight(base.Path, "/") + path
 	endpoint := base.String()
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, nil)
+	// A body only makes sense on the action itself; GET stays a bare request.
+	var reader io.Reader
+	if method == http.MethodPost && strings.TrimSpace(input.Body) != "" {
+		reader = strings.NewReader(input.Body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
 		return CheckinResult{}, &CheckinError{Kind: ErrorInvalidURL}
 	}
@@ -127,6 +151,20 @@ func (a *ExternalCheckinAdapter) Checkin(ctx context.Context, input CheckinInput
 	}
 	if len(body) > maxCheckinResponseBytes {
 		return CheckinResult{}, &CheckinError{Kind: ErrorTooLarge}
+	}
+	// A challenge page is not a check-in. Edge WAFs (Aliyun's acw_sc__v2, Cloudflare's
+	// five-second shield) answer 200 with an HTML document and expect the browser to
+	// run a script before the real request; a JSON endpoint never answers a page.
+	// Calling that a success is the one failure this adapter must not have: the
+	// operator would see a green check-in that never reached the site.
+	if wafChallengeBody(resp.Header.Get("Content-Type"), body) {
+		return CheckinResult{}, &CheckinError{
+			Kind:   ErrorPayload,
+			Status: resp.StatusCode,
+			Message: "upstream answered with an HTML page instead of JSON — a WAF / five-second challenge " +
+				"or a login page, so no check-in happened. Copy a fresh cookie from the browser, including the " +
+				"shield cookies (acw_sc__v2, cf_clearance, …).",
+		}
 	}
 	var payload struct {
 		Success *bool  `json:"success"`

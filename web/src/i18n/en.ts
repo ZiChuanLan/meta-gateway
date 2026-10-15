@@ -2724,6 +2724,9 @@ export const en: Dict = {
   "ops.external.headersHint":
     'Optional headers sent with every check-in request, e.g. {"new-api-user":"68760"} for New-API forks. Host / Cookie cannot be overridden.',
   "ops.external.headersInvalidJson": "Headers must be a JSON object of string values",
+  "ops.external.body": "Request body (JSON, optional)",
+  "ops.external.bodyHint":
+    'Some sites check in through an action rather than an empty POST, e.g. {"date":"{{today}}"}. {{today}} is replaced with the check-in day (CHECKIN_TZ) on every run, so one configuration keeps working. Empty = an empty request body.',
   "ops.external.cookie": "Cookie",
   "ops.external.cookieHint": "Login cookie, e.g. auth_token=…. Stored encrypted.",
   "ops.external.cookieKeepHint": "Leave empty to keep the stored cookie; fill to replace it.",

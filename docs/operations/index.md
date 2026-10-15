@@ -24,6 +24,7 @@
 | [部署与反代](./deployment) | 部署、Web 控制台的构建顺序、反代与零停机更新、优雅关闭 |
 | [观测与指标](./observability) | 时间窗口聚合、`/metrics`、`/readyz`、实时追踪 |
 | [数据保留策略](./retention) | 审计保留、历史表裁剪、站点探针保留期 |
+| [站点签到](./checkin) | 两种签到的区别、请求形态、`{{today}}`、WAF/五秒盾与失败对照 |
 | [备份与恢复](./backup-restore) | 在线快照、恢复流程、`MASTER_KEY` 铁律 |
 | [故障排查](./troubleshooting) | 按症状排查，基于 `proxy_logs` 的链路钻取 |
 | [端到端验证](./testing) | 容器 E2E 的跑法 |

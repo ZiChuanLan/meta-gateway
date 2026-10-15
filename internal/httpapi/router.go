@@ -151,6 +151,7 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	checkinService := dependencies.CheckinService
 	if checkinService == nil {
 		checkinService = checkin.New(db, enc, registry)
+		checkinService.SetLocation(cfg.CheckinLocation())
 	}
 	discoveryService := dependencies.DiscoveryService
 	if discoveryService == nil {

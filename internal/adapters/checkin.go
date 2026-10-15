@@ -35,6 +35,10 @@ type CheckinInput struct {
 	// than a cookie (e.g. New-API forks require new-api-user). Host / Cookie /
 	// hop-by-hop headers are ignored; Origin/Referer stay derived from the URL.
 	Headers map[string]string
+	// Body is the request body for external sites whose check-in is an action
+	// rather than a bare POST (e.g. relayfor.xyz wants {"date":"…"}). Empty
+	// means an empty body, which is what most sites expect.
+	Body string
 }
 
 type CheckinResult struct {
@@ -221,7 +225,7 @@ func explainCheckinHTTPStatus(status int) string {
 	case http.StatusForbidden:
 		return "HTTP 403 forbidden — no permission, IP blocked, or Cloudflare/WAF challenge"
 	case http.StatusMethodNotAllowed:
-		return "HTTP 405 method not allowed — check-in path may differ on this site"
+		return "HTTP 405 method not allowed — this path exists but does not accept this method; set the exact path the site's own check-in button calls (外部签到 → 签到路径)"
 	case http.StatusRequestTimeout:
 		return "HTTP 408 request timeout from upstream"
 	case http.StatusTooManyRequests:

@@ -196,6 +196,7 @@ function ExternalCheckinDialog({
       ? JSON.stringify(existing.headers, null, 2)
       : "",
   );
+  const [bodyText, setBodyText] = useState(existing?.checkin_body ?? "");
   const [cookie, setCookie] = useState("");
   const [enabled, setEnabled] = useState(existing?.checkin_enabled ?? true);
   const [error, setError] = useState("");
@@ -216,6 +217,9 @@ function ExternalCheckinDialog({
         checkin_path: checkinPath.trim(),
         checkin_method: method,
         headers: parsedHeaders,
+        // A body the operator cleared must clear it on the server too, and the
+        // field is a pointer there for exactly this reason.
+        checkin_body: bodyText.trim(),
         enabled,
       };
       if (existing) {
@@ -305,6 +309,16 @@ function ExternalCheckinDialog({
             value={headersText}
             onChange={(e) => setHeadersText(e.target.value)}
             placeholder='{"new-api-user": "68760"}'
+            disabled={save.isPending}
+          />
+        </Field>
+        <Field label={t("ops.external.body")} hint={t("ops.external.bodyHint")}>
+          <textarea
+            className="mono"
+            rows={2}
+            value={bodyText}
+            onChange={(e) => setBodyText(e.target.value)}
+            placeholder='{"date":"{{today}}"}'
             disabled={save.isPending}
           />
         </Field>

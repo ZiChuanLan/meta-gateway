@@ -1711,6 +1711,11 @@ export interface ExternalCheckin {
   checkin_path?: string;
   checkin_method?: string;
   headers?: Record<string, string>;
+  /**
+   * Optional request body. Campaign sites take the day as an argument; the
+   * literal {{today}} is expanded to the check-in day (CHECKIN_TZ) at run time.
+   */
+  checkin_body?: string;
   checkin_enabled: boolean;
   has_cookie: boolean;
 }

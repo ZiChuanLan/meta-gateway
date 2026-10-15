@@ -69,6 +69,11 @@ type Service struct {
 	enc      *crypto.Encrypter
 	registry *adapters.Registry
 	now      func() time.Time
+	// location is the timezone a check-in day is computed in, for sites whose
+	// endpoint takes the date as an argument ({{today}}). It matches the
+	// scheduler's own timezone so a scheduled run and a manual one agree on
+	// which day it is.
+	location *time.Location
 	// notifier delivers checkin-failed alerts.
 	notifier *webhook.Notifier
 
@@ -82,8 +87,17 @@ func New(db *store.DB, enc *crypto.Encrypter, registry *adapters.Registry) *Serv
 		enc:      enc,
 		registry: registry,
 		now:      time.Now,
+		location: time.Local,
 		running:  make(map[int64]struct{}),
 	}
+}
+
+// SetLocation sets the timezone check-in days are computed in (see CHECKIN_TZ).
+func (s *Service) SetLocation(loc *time.Location) {
+	if loc == nil {
+		return
+	}
+	s.location = loc
 }
 
 // SetNotifier attaches the alert notifier (checkin-failed events).
@@ -202,6 +216,7 @@ func (s *Service) RunCredential(ctx context.Context, credentialID int64, source 
 		CheckinPath:    checkinPathOverride(credential.MetaJSON),
 		CheckinMethod:  checkinMethodOverride(credential.MetaJSON),
 		Headers:        checkinHeadersOverride(credential.MetaJSON),
+		Body:           checkinBodyOverride(credential.MetaJSON, s.today()),
 	})
 	zero(plaintext)
 	zero(cookiePlain)
@@ -563,6 +578,36 @@ func checkinHeadersOverride(metaJSON string) map[string]string {
 		return nil
 	}
 	return meta.Headers
+}
+
+// today is the current date in the check-in timezone, the value {{today}}
+// expands to in a configured request body.
+func (s *Service) today() string {
+	loc := s.location
+	if loc == nil {
+		loc = time.Local
+	}
+	return s.now().In(loc).Format("2006-01-02")
+}
+
+// checkinBodyOverride reads the optional request body external check-in sites
+// declare in credential meta, with {{today}} expanded to the check-in day.
+//
+// Sites that run a campaign take the day as an argument (relayfor.xyz posts
+// {"date":"2026-10-15"}), and a body frozen at configuration time would claim the
+// wrong day every day after that: the placeholder is the whole point.
+func checkinBodyOverride(metaJSON string, today string) string {
+	var meta struct {
+		CheckinBody string `json:"checkin_body"`
+	}
+	if err := json.Unmarshal([]byte(metaJSON), &meta); err != nil {
+		return ""
+	}
+	body := strings.TrimSpace(meta.CheckinBody)
+	if body == "" {
+		return ""
+	}
+	return strings.ReplaceAll(body, "{{today}}", today)
 }
 
 func zero(value []byte) {

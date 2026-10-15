@@ -174,6 +174,7 @@ export const SECTIONS: DocSection[] = [
 					{ text: '告警', link: '/operations/alerts' },
 					{ text: '审计与日志', link: '/operations/audit-and-logs' },
 					{ text: '数据保留策略', link: '/operations/retention' },
+					{ text: '站点签到', link: '/operations/checkin' },
 					{ text: '维护与清理', link: '/operations/maintenance' },
 					{ text: '备份与恢复', link: '/operations/backup-restore' },
 					{ text: 'WebDAV 同步', link: '/operations/webdav-sync' },

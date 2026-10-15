@@ -124,6 +124,7 @@ func main() {
 	})
 	registry := adapters.NewRegistry(outboundClient)
 	checkinService := checkin.New(db, enc, registry)
+	checkinService.SetLocation(cfg.CheckinLocation())
 	pluginService, err := plugins.NewServiceWithOptions(cfg.PluginsDir, db.Plugin, cfg.PluginCatalogURL, outboundClient)
 	if err != nil {
 		logger.Error("plugin host initialization failed", "category", "plugins")

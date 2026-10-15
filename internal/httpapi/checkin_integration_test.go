@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -158,7 +159,7 @@ func TestCheckinAdminWorkflow(t *testing.T) {
 }
 
 func TestExternalCheckinAdminWorkflow(t *testing.T) {
-	var gotCookie, gotOrigin, gotReferer string
+	var gotCookie, gotOrigin, gotReferer, gotBody string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/checkin/spin" {
 			http.NotFound(w, r)
@@ -171,6 +172,8 @@ func TestExternalCheckinAdminWorkflow(t *testing.T) {
 		gotCookie = r.Header.Get("Cookie")
 		gotOrigin = r.Header.Get("Origin")
 		gotReferer = r.Header.Get("Referer")
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
 		_, _ = io.WriteString(w, `{"success":true,"message":"ok","data":{"reward":"100 积分"}}`)
 	}))
 	defer upstream.Close()
@@ -223,21 +226,36 @@ func TestExternalCheckinAdminWorkflow(t *testing.T) {
 	status, raw := requestJSON(http.MethodPost, "/admin/checkin/external", map[string]any{
 		"name": "薄荷公益站", "base_url": upstream.URL,
 		"checkin_path": "/api/checkin/spin", "checkin_method": "POST",
-		"cookie": cookie, "enabled": true,
+		// The campaign sites take the day as an argument; {{today}} is what makes
+		// one configuration work every day.
+		"checkin_body": `{"date":"{{today}}"}`,
+		"cookie":       cookie, "enabled": true,
 	}, true)
 	if status != http.StatusCreated {
 		t.Fatalf("create external status=%d body=%s", status, raw)
 	}
 	var created struct {
-		SiteID         int64 `json:"site_id"`
-		CredentialID   int64 `json:"credential_id"`
-		CheckinEnabled bool  `json:"checkin_enabled"`
+		SiteID         int64  `json:"site_id"`
+		CredentialID   int64  `json:"credential_id"`
+		CheckinEnabled bool   `json:"checkin_enabled"`
+		CheckinBody    string `json:"checkin_body"`
 	}
 	if err := json.Unmarshal(raw, &created); err != nil {
 		t.Fatalf("create response: %v body=%s", err, raw)
 	}
 	if !created.CheckinEnabled {
 		t.Fatal("external check-in must honor enabled=true")
+	}
+	if created.CheckinBody != `{"date":"{{today}}"}` {
+		t.Fatalf("checkin_body did not round-trip: %q", created.CheckinBody)
+	}
+
+	// A body that is not JSON is rejected at save time, not at 3am.
+	status, raw = requestJSON(http.MethodPut, fmt.Sprintf("/admin/checkin/external/%d", created.SiteID), map[string]any{
+		"checkin_body": "{oops",
+	}, true)
+	if status != http.StatusBadRequest {
+		t.Fatalf("invalid checkin_body status=%d body=%s", status, raw)
 	}
 
 	// List must never expose the cookie.
@@ -256,6 +274,10 @@ func TestExternalCheckinAdminWorkflow(t *testing.T) {
 	}
 	if gotCookie != cookie || gotOrigin != upstream.URL || gotReferer != upstream.URL+"/" {
 		t.Fatalf("upstream saw cookie=%q origin=%q referer=%q", gotCookie, gotOrigin, gotReferer)
+	}
+	// The stored template reached the site as a body with today's date resolved.
+	if !regexp.MustCompile(`^\{"date":"\d{4}-\d{2}-\d{2}"\}$`).MatchString(gotBody) {
+		t.Fatalf("upstream body = %q, want the date expanded", gotBody)
 	}
 	if !bytes.Contains(raw, []byte(`"reward":"100 积分"`)) {
 		t.Fatalf("external run missing reward: %s", raw)

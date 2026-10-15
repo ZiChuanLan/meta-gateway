@@ -2,6 +2,7 @@ package adapters
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -201,5 +202,92 @@ func TestExternalCheckinAdapterUserAgent(t *testing.T) {
 	}
 	if gotUA != "custom-agent/1.0" {
 		t.Fatalf("custom User-Agent = %q, want custom-agent/1.0", gotUA)
+	}
+}
+
+// Action-shaped check-ins take the day as an argument (relayfor.xyz claims a
+// campaign day with {"date":"…"}), so the configured body has to reach the
+// upstream verbatim, and an unconfigured one must stay absent.
+func TestExternalCheckinAdapterSendsConfiguredBody(t *testing.T) {
+	var gotBody, gotType, gotMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		gotBody, gotType, gotMethod = string(raw), r.Header.Get("Content-Type"), r.Method
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	adapter := NewExternalCheckinAdapter("external-checkin", srv.Client())
+	if _, err := adapter.Checkin(context.Background(), CheckinInput{
+		BaseURL:       srv.URL,
+		Cookie:        "auth_token=abc",
+		CheckinPath:   "/api/user/checkin-campaigns/5/claim",
+		CheckinMethod: http.MethodPost,
+		Body:          `{"date":"2026-10-15"}`,
+	}); err != nil {
+		t.Fatalf("checkin with body: %v", err)
+	}
+	if gotBody != `{"date":"2026-10-15"}` || gotType != "application/json" || gotMethod != http.MethodPost {
+		t.Fatalf("upstream saw method=%s type=%s body=%s", gotMethod, gotType, gotBody)
+	}
+
+	// No body configured: the request stays empty, which is what the sites that
+	// predate this field expect.
+	gotBody = "unset"
+	if _, err := adapter.Checkin(context.Background(), CheckinInput{
+		BaseURL: srv.URL, Cookie: "auth_token=abc",
+	}); err != nil {
+		t.Fatalf("checkin without body: %v", err)
+	}
+	if gotBody != "" {
+		t.Fatalf("body = %q, want an empty request", gotBody)
+	}
+}
+
+// A WAF challenge is a 200 with a page. Reporting it as a successful check-in is
+// the one failure this adapter must not have — the operator would see a green run
+// for a request that never reached the endpoint. This is the response
+// anyrouter.top gives a client that arrives without its shield cookie.
+func TestExternalCheckinAdapterRejectsWAFChallengePage(t *testing.T) {
+	challenge := `<!DOCTYPE html><html><head><script>document.cookie='acw_sc__v2=…'</script></head></html>`
+	for name, contentType := range map[string]string{
+		"with content type": "text/html; charset=utf-8",
+		// An edge cache occasionally drops the header; a document is still a document.
+		"without content type": "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if contentType != "" {
+					w.Header().Set("Content-Type", contentType)
+				}
+				_, _ = w.Write([]byte(challenge))
+			}))
+			t.Cleanup(srv.Close)
+
+			adapter := NewExternalCheckinAdapter("external-checkin", srv.Client())
+			_, err := adapter.Checkin(context.Background(), CheckinInput{
+				BaseURL: srv.URL, Cookie: "session=abc",
+			})
+			if err == nil {
+				t.Fatal("a challenge page was reported as a successful check-in")
+			}
+			if !strings.Contains(err.Error(), "HTML") || !strings.Contains(err.Error(), "WAF") {
+				t.Fatalf("error = %v, want it to name the challenge page", err)
+			}
+		})
+	}
+
+	// Plain text without a document body keeps counting as success: plenty of
+	// small sites answer "ok", and a 2xx that is not a page is still an answer.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("ok"))
+	}))
+	t.Cleanup(srv.Close)
+	result, err := NewExternalCheckinAdapter("external-checkin", srv.Client()).
+		Checkin(context.Background(), CheckinInput{BaseURL: srv.URL, Cookie: "session=abc"})
+	if err != nil || result.Outcome != CheckinSuccess {
+		t.Fatalf("plain text = %+v err=%v", result, err)
 	}
 }

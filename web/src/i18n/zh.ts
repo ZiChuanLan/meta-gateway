@@ -2517,6 +2517,9 @@ export const zh: Dict = {
   "ops.external.headersHint":
     '每次签到请求附带的请求头，如 {"new-api-user":"68760"}（New-API 系站点需要）。Host / Cookie 不允许覆盖。',
   "ops.external.headersInvalidJson": "请求头必须是字符串值的 JSON 对象",
+  "ops.external.body": "请求体（JSON，可选）",
+  "ops.external.bodyHint":
+    '部分站点的签到是一个动作而不是空 POST，需要带参数，如 {"date":"{{today}}"}。{{today}} 会在每次运行时替换成签到日（按 CHECKIN_TZ 时区），所以一份配置每天都能用。留空 = 空请求体。',
   "ops.external.cookie": "Cookie",
   "ops.external.cookieHint": "登录 Cookie，如 auth_token=…。加密存储。",
   "ops.external.cookieKeepHint": "留空保留已存 Cookie；填写则替换。",

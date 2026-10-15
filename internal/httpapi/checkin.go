@@ -46,6 +46,9 @@ type externalCheckinMeta struct {
 	CheckinPath   string            `json:"checkin_path,omitempty"`
 	CheckinMethod string            `json:"checkin_method,omitempty"`
 	Headers       map[string]string `json:"headers,omitempty"`
+	// CheckinBody is the request body for sites whose check-in is an action
+	// (relayfor.xyz posts {"date":"…"}). {{today}} expands at run time.
+	CheckinBody string `json:"checkin_body,omitempty"`
 }
 
 // externalCheckinView is the admin-safe list/update shape (never the cookie).
@@ -57,8 +60,33 @@ type externalCheckinView struct {
 	CheckinPath    string            `json:"checkin_path,omitempty"`
 	CheckinMethod  string            `json:"checkin_method,omitempty"`
 	Headers        map[string]string `json:"headers,omitempty"`
+	CheckinBody    string            `json:"checkin_body,omitempty"`
 	CheckinEnabled bool              `json:"checkin_enabled"`
 	HasCookie      bool              `json:"has_cookie"`
+}
+
+// maxExternalCheckinBodyBytes bounds the configured request body: a check-in
+// payload is a handful of fields, and the meta column is not a scratch pad.
+const maxExternalCheckinBodyBytes = 4096
+
+// normalizeExternalBody validates the optional check-in body.
+//
+// It must parse as JSON: the endpoint receives it verbatim, so a typo belongs in
+// the save response, not in a 3am failure log. `{{today}}` sits inside a JSON
+// string literal ({"date":"{{today}}"}), which keeps the whole template
+// parseable.
+func normalizeExternalBody(raw string) (string, error) {
+	body := strings.TrimSpace(raw)
+	if body == "" {
+		return "", nil
+	}
+	if len(body) > maxExternalCheckinBodyBytes {
+		return "", errors.New("body is too large")
+	}
+	if !json.Valid([]byte(body)) {
+		return "", errors.New("body must be valid JSON")
+	}
+	return body, nil
 }
 
 // normalizeExternalHeaders validates and canonicalizes user-supplied request
@@ -121,6 +149,7 @@ func (h *CheckinHandler) listExternal(w http.ResponseWriter, r *http.Request) {
 				view.CheckinPath = meta.CheckinPath
 				view.CheckinMethod = meta.CheckinMethod
 				view.Headers = meta.Headers
+				view.CheckinBody = meta.CheckinBody
 			}
 			break
 		}
@@ -136,6 +165,7 @@ func (h *CheckinHandler) createExternal(w http.ResponseWriter, r *http.Request) 
 		CheckinPath   string            `json:"checkin_path"`
 		CheckinMethod string            `json:"checkin_method"`
 		Headers       map[string]string `json:"headers"`
+		CheckinBody   string            `json:"checkin_body"`
 		Cookie        string            `json:"cookie"`
 		Enabled       *bool             `json:"enabled"`
 	}
@@ -172,10 +202,16 @@ func (h *CheckinHandler) createExternal(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid headers: "+err.Error())
 		return
 	}
+	checkinBody, err := normalizeExternalBody(req.CheckinBody)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid checkin_body: "+err.Error())
+		return
+	}
 	meta, err := json.Marshal(externalCheckinMeta{
 		CheckinPath:   strings.TrimSpace(req.CheckinPath),
 		CheckinMethod: method,
 		Headers:       headers,
+		CheckinBody:   checkinBody,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to encode metadata")
@@ -234,6 +270,7 @@ func (h *CheckinHandler) createExternal(w http.ResponseWriter, r *http.Request) 
 		CheckinPath:    strings.TrimSpace(req.CheckinPath),
 		CheckinMethod:  method,
 		Headers:        headers,
+		CheckinBody:    checkinBody,
 		CheckinEnabled: enabled,
 		HasCookie:      true,
 	})
@@ -250,6 +287,7 @@ func (h *CheckinHandler) updateExternal(w http.ResponseWriter, r *http.Request) 
 		CheckinPath   string            `json:"checkin_path"`
 		CheckinMethod string            `json:"checkin_method"`
 		Headers       map[string]string `json:"headers"`
+		CheckinBody   *string           `json:"checkin_body"`
 		Cookie        string            `json:"cookie"`
 		ClearCookie   bool              `json:"clear_cookie"`
 		Enabled       *bool             `json:"enabled"`
@@ -324,7 +362,18 @@ func (h *CheckinHandler) updateExternal(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "invalid headers: "+headerErr.Error())
 		return
 	}
-	if method != "" || path != "" || headers != nil {
+	// A pointer separates "clear the body" (an empty string) from "leave it
+	// alone" (the field was not sent), exactly like the cookie field below.
+	checkinBody := ""
+	if req.CheckinBody != nil {
+		normalized, bodyErr := normalizeExternalBody(*req.CheckinBody)
+		if bodyErr != nil {
+			writeError(w, http.StatusBadRequest, "invalid checkin_body: "+bodyErr.Error())
+			return
+		}
+		checkinBody = normalized
+	}
+	if method != "" || path != "" || headers != nil || req.CheckinBody != nil {
 		var meta externalCheckinMeta
 		if json.Unmarshal([]byte(credential.MetaJSON), &meta) != nil {
 			meta = externalCheckinMeta{}
@@ -337,6 +386,9 @@ func (h *CheckinHandler) updateExternal(w http.ResponseWriter, r *http.Request) 
 		}
 		if headers != nil {
 			meta.Headers = headers
+		}
+		if req.CheckinBody != nil {
+			meta.CheckinBody = checkinBody
 		}
 		body, marshalErr := json.Marshal(meta)
 		if marshalErr != nil {
@@ -372,6 +424,7 @@ func (h *CheckinHandler) updateExternal(w http.ResponseWriter, r *http.Request) 
 		CheckinPath:    meta.CheckinPath,
 		CheckinMethod:  meta.CheckinMethod,
 		Headers:        meta.Headers,
+		CheckinBody:    meta.CheckinBody,
 		CheckinEnabled: enabled,
 		HasCookie:      len(credential.CookieEnc) > 0,
 	})
