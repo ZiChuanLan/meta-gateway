@@ -717,6 +717,11 @@ type ProxyLog struct {
 	FirstByteMs int `json:"first_byte_ms,omitempty"`
 	// ClientFamily is the coarse client classification from the User-Agent.
 	ClientFamily string `json:"client_family,omitempty"`
+	// ClientUA is the caller's raw User-Agent (truncated), the evidence the
+	// classification was made from. It is what makes an unrecognized client
+	// identifiable: no family list can name every client, but the string
+	// always says who it was.
+	ClientUA string `json:"client_ua,omitempty"`
 	// ReasoningEffort is the client-requested reasoning effort (OpenAI style,
 	// e.g. low / medium / high / max / xhigh) when present in the request body.
 	ReasoningEffort string `json:"reasoning_effort,omitempty"`

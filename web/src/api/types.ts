@@ -436,6 +436,8 @@ export interface ProxyLog {
   cache_creation_tokens?: number;
   first_byte_ms?: number;
   client_family?: string;
+  /** The caller's raw User-Agent, the evidence behind client_family. */
+  client_ua?: string;
   reasoning_effort?: string;
   /**
    * Set when a capability downgrade rewrote the requested effort before

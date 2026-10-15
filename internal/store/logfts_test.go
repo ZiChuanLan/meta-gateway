@@ -75,6 +75,47 @@ func TestProxyLogFullTextSearch(t *testing.T) {
 	}
 }
 
+// The client identity is searchable, so "which requests came from opencode" is
+// a query rather than a scan. The client string only reaches the index through
+// the UPDATE triggers (the log row is enriched after the request finishes), so
+// a column missing from those triggers would silently leave the row findable by
+// its other fields only.
+func TestProxyLogSearchFindsClientUserAgent(t *testing.T) {
+	db := openTestDB(t)
+	for _, row := range []domain.ProxyLog{
+		{RequestID: "from-opencode", Model: "m", Status: 200},
+		{RequestID: "from-pi", Model: "m", Status: 200},
+	} {
+		if _, err := db.ProxyLog.Insert(&row); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+	if err := db.ProxyLog.UpdateMetaByRequestID("from-opencode", 5, "opencode", "opencode/1.18.34 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ProxyLog.UpdateMetaByRequestID("from-pi", 5, "pi", "pi (win32 10.0.26300; x64)"); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := db.ProxyLog.ListFilter(store.ProxyLogFilter{Query: "opencode", Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].RequestID != "from-opencode" {
+		t.Fatalf("client search = %+v", rows)
+	}
+	if rows[0].ClientUA != "opencode/1.18.34 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14" {
+		t.Fatalf("client_ua not projected back: %+v", rows[0])
+	}
+
+	// A build without FTS5 has no index to check; the LIKE branch above is the
+	// whole feature there.
+	var indexed int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM proxy_logs_fts WHERE proxy_logs_fts MATCH 'opencode'`).Scan(&indexed); err == nil && indexed != 1 {
+		t.Fatalf("indexed client rows = %d, want 1", indexed)
+	}
+}
+
 // Search must compose with the existing filters rather than replace them.
 func TestProxyLogSearchComposesWithFilters(t *testing.T) {
 	db := openTestDB(t)

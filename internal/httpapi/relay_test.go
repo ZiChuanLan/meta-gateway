@@ -9,25 +9,34 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestClientFamilyClassification(t *testing.T) {
 	cases := map[string]string{
-		"Claude-Code/1.0":                      "claude-code",
-		"claude-code/1.0 (cli)":                "claude-code",
-		"ClaudeDesktop/1.0.4":                  "claude-desktop",
-		"CherryStudio/1.0.3":                   "cherry-studio",
-		"Cherry Studio/0.9.22":                 "cherry-studio",
-		"LobeChat/1.0.0":                       "lobe",
-		"Chatbox/1.0.0":                        "chatbox",
-		"NextChat/2.14":                        "nextchat",
-		"OpenCat/1.0":                          "opencat",
-		"Copilot/1.0":                          "copilot",
-		"Cursor/0.40":                          "cursor",
-		"Windsurf/1.0":                         "windsurf",
-		"pi/1.2.3 (win32; bun/1.1.0; x64)":     "pi",
-		"pi-coding-agent":                      "pi",
-		"api/v1/status":                        "browser",
+		"pi/1.2.3 (win32; bun/1.1.0; x64)":       "pi",
+		"pi (win32 10.0.26300; x64)":             "pi",
+		"pi-coding-agent":                        "pi",
+		"Claude-Code/1.0":                        "claude-code",
+		"claude-code/1.0 (cli)":                  "claude-code",
+		"claude-cli/2.1.207 (external, sdk-cli)": "claude-code",
+		"ClaudeDesktop/1.0.4":                    "claude-desktop",
+		"CherryStudio/1.0.3":                     "cherry-studio",
+		"Cherry Studio/0.9.22":                   "cherry-studio",
+		"LobeChat/1.0.0":                         "lobe",
+		"Chatbox/1.0.0":                          "chatbox",
+		"NextChat/2.14":                          "nextchat",
+		"OpenCat/1.0":                            "opencat",
+		"Kilo-Code/1.0":                          "kilo-code",
+		"Copilot/1.0":                            "copilot",
+		"Cursor/0.40":                            "cursor",
+		"Windsurf/1.0":                           "windsurf",
+		// The coding CLIs, by the User-Agent each one actually sends.
+		"codex_exec/0.155.1 (Windows 10.0.26300; x86_64) pebrel/2.2.0_2fde458":           "codex",
+		"codex_cli_rs/0.155.1 (Mac OS 15.0; arm64) iTerm.app/3.5.14":                     "codex",
+		"GeminiCLI/0.62.0/gemini-3-pro (win32; x64; interactive)":                        "gemini-cli",
+		"opencode/1.18.34 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14":               "opencode",
+		"deepseek-harness/0.2.0-rc.2 (+https://github.com/deepseek-ai/deepseek-harness)": "dsh",
 		"Anthropic/2.0":                        "anthropic",
 		"OpenAI/Python 1.30.0":                 "openai-python",
 		"OpenAI-API/1.0 ChatGPT/1.0":           "openai",
@@ -38,6 +47,13 @@ func TestClientFamilyClassification(t *testing.T) {
 		"Insomnia/2023.5":                      "insomnia",
 		"Mozilla/5.0 (Windows NT 10.0; Win64)": "browser",
 		"":                                     "unknown",
+		// Unidentified is not the same as a browser: claiming "browser" for
+		// every unrecognized agent both asserted something false and threw away
+		// the one usable fact. The raw User-Agent is stored on the row next to
+		// this bucket, so these rows stay answerable.
+		"api/v1/status":      "unknown",
+		"Zalando/1.0":        "unknown",
+		"Go-http-client/1.1": "unknown",
 	}
 	for ua, want := range cases {
 		if got := ClientFamily(ua); got != want {
@@ -84,6 +100,45 @@ func TestClientFamilyOf(t *testing.T) {
 	req.Header.Set("anthropic-version", "2023-06-01")
 	if got := ClientFamilyOf(req); got != "unknown" {
 		t.Fatalf("anthropic-version alone → %q", got)
+	}
+	// The protocol fallback only runs for a UA the family list cannot place —
+	// it used to be dead code, because every UA (any non-empty one) came back
+	// as "browser" before it could be reached.
+	req = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("User-Agent", "my-private-fork/0.1")
+	if got := ClientFamilyOf(req); got != "anthropic" {
+		t.Fatalf("unknown ua + anthropic protocol → %q", got)
+	}
+}
+
+func TestClientUAStringIsSanitizedAndCapped(t *testing.T) {
+	newReq := func(ua string) *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		if ua != "" {
+			req.Header.Set("User-Agent", ua)
+		}
+		return req
+	}
+	if got := clientUAString(newReq("")); got != "" {
+		t.Fatalf("empty ua → %q", got)
+	}
+	if got := clientUAString(newReq("  pi/1.0  ")); got != "pi/1.0" {
+		t.Fatalf("trim → %q", got)
+	}
+	// A header value is client-supplied: it must not carry control characters
+	// into the log table, the console's CSV export or the JSON API.
+	if got := clientUAString(newReq("pi/1.0\r\nX-Injected: 1")); strings.ContainsAny(got, "\r\n") || got != "pi/1.0X-Injected: 1" {
+		t.Fatalf("control characters survived: %q", got)
+	}
+	long := "pi/1.0 (" + strings.Repeat("x", maxClientUALen*2) + ")"
+	if got := clientUAString(newReq(long)); len([]rune(got)) != maxClientUALen {
+		t.Fatalf("cap → %d runes, want %d", len([]rune(got)), maxClientUALen)
+	}
+	// Capping by rune means a multi-byte character is never cut in half.
+	wide := strings.Repeat("⇥", maxClientUALen+10)
+	if got := clientUAString(newReq(wide)); len([]rune(got)) != maxClientUALen || !utf8.ValidString(got) {
+		t.Fatalf("wide cap → %q", got)
 	}
 }
 

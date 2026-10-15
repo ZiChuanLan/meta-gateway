@@ -29,7 +29,7 @@ import (
 func (h *RelayHandler) attemptAccountant(
 	req proxy.Request,
 	meta *proxy.AttemptMeta,
-	requestID, clientFamily string,
+	requestID, clientFamily, clientUA string,
 ) func(tokens usage.Tokens, status int, firstByteMs int, bytesSent int64) {
 	return func(tokens usage.Tokens, status int, firstByteMs int, bytesSent int64) {
 		channelID := int64(0)
@@ -43,7 +43,7 @@ func (h *RelayHandler) attemptAccountant(
 		}
 		h.proxy.RecordUsage(req, channelID, status, tokens)
 		if h.db != nil && h.db.ProxyLog != nil && requestID != "" {
-			if err := h.db.ProxyLog.UpdateMetaByRequestID(requestID, firstByteMs, clientFamily); err != nil {
+			if err := h.db.ProxyLog.UpdateMetaByRequestID(requestID, firstByteMs, clientFamily, clientUA); err != nil {
 				log.Printf("relay: update log meta request_id=%s: %v", requestID, err)
 			}
 		}

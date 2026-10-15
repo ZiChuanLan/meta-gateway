@@ -872,6 +872,7 @@ func TestStreamCacheUsageMetering(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodPost, base+"/v1/chat/completions", strings.NewReader(reqBody))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "pi (win32 10.0.26300; x64)")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -915,12 +916,17 @@ func TestStreamCacheUsageMetering(t *testing.T) {
 	if got := asInt64(t, entry["cache_creation_tokens"]); got != 8 {
 		t.Fatalf("cache_creation_tokens=%d want 8", got)
 	}
-	// Streaming observability: first-byte latency recorded and client family
-	// derived from the test client's User-Agent (Go-http-client → browser).
+	// Streaming observability: first-byte latency recorded, and the caller
+	// identified from its own User-Agent — the coarse family plus the raw
+	// string it was classified from, so a client the classifier does not know
+	// is still identifiable on the row.
 	if got := asInt64(t, entry["first_byte_ms"]); got <= 0 {
 		t.Fatalf("first_byte_ms=%d want > 0; entry=%#v", got, entry)
 	}
-	if family, _ := entry["client_family"].(string); family == "" {
-		t.Fatalf("client_family missing: %#v", entry)
+	if family, _ := entry["client_family"].(string); family != "pi" {
+		t.Fatalf("client_family=%q want pi: %#v", family, entry)
+	}
+	if ua, _ := entry["client_ua"].(string); ua != "pi (win32 10.0.26300; x64)" {
+		t.Fatalf("client_ua=%q; entry=%#v", ua, entry)
 	}
 }

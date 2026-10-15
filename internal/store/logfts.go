@@ -22,25 +22,25 @@ import (
 // instead of taking the process down.
 const (
 	logFTSCreate = `CREATE VIRTUAL TABLE IF NOT EXISTS proxy_logs_fts USING fts5(
-		model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url,
+		model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url, client_ua,
 		content='proxy_logs', content_rowid='id'
 	)`
 
 	logFTSInsertTrigger = `CREATE TRIGGER IF NOT EXISTS proxy_logs_fts_ai AFTER INSERT ON proxy_logs BEGIN
-		INSERT INTO proxy_logs_fts(rowid, model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url)
-		VALUES (new.id, new.model, new.error_brief, new.error_detail, new.path, new.request_id, new.upstream_request_id, new.upstream_url);
+		INSERT INTO proxy_logs_fts(rowid, model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url, client_ua)
+		VALUES (new.id, new.model, new.error_brief, new.error_detail, new.path, new.request_id, new.upstream_request_id, new.upstream_url, new.client_ua);
 	END`
 
 	logFTSDeleteTrigger = `CREATE TRIGGER IF NOT EXISTS proxy_logs_fts_ad AFTER DELETE ON proxy_logs BEGIN
-		INSERT INTO proxy_logs_fts(proxy_logs_fts, rowid, model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url)
-		VALUES ('delete', old.id, old.model, old.error_brief, old.error_detail, old.path, old.request_id, old.upstream_request_id, old.upstream_url);
+		INSERT INTO proxy_logs_fts(proxy_logs_fts, rowid, model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url, client_ua)
+		VALUES ('delete', old.id, old.model, old.error_brief, old.error_detail, old.path, old.request_id, old.upstream_request_id, old.upstream_url, old.client_ua);
 	END`
 
 	logFTSUpdateTrigger = `CREATE TRIGGER IF NOT EXISTS proxy_logs_fts_au AFTER UPDATE ON proxy_logs BEGIN
-		INSERT INTO proxy_logs_fts(proxy_logs_fts, rowid, model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url)
-		VALUES ('delete', old.id, old.model, old.error_brief, old.error_detail, old.path, old.request_id, old.upstream_request_id, old.upstream_url);
-		INSERT INTO proxy_logs_fts(rowid, model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url)
-		VALUES (new.id, new.model, new.error_brief, new.error_detail, new.path, new.request_id, new.upstream_request_id, new.upstream_url);
+		INSERT INTO proxy_logs_fts(proxy_logs_fts, rowid, model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url, client_ua)
+		VALUES ('delete', old.id, old.model, old.error_brief, old.error_detail, old.path, old.request_id, old.upstream_request_id, old.upstream_url, old.client_ua);
+		INSERT INTO proxy_logs_fts(rowid, model, error_brief, error_detail, path, request_id, upstream_request_id, upstream_url, client_ua)
+		VALUES (new.id, new.model, new.error_brief, new.error_detail, new.path, new.request_id, new.upstream_request_id, new.upstream_url, new.client_ua);
 	END`
 )
 
@@ -67,9 +67,11 @@ func (s *LogFTSState) Available(db *sql.DB) bool {
 }
 
 func ensureLogFTS(db *sql.DB) bool {
-	if !logFTSHasColumn(db, "upstream_url") {
-		// The indexed column list changed (proxy_logs.upstream_url). An FTS5
-		// table cannot gain a column in place, and the insert triggers now
+	if !logFTSHasColumn(db, "client_ua") {
+		// The indexed column list changed (proxy_logs.upstream_url, then
+		// proxy_logs.client_ua — the newest indexed column is the version
+		// marker, since every older list is a subset of the current one). An
+		// FTS5 table cannot gain a column in place, and the insert triggers now
 		// reference one: leaving the old table would make every log write fail.
 		// Drop table + triggers once and let the DDL and the rebuild below
 		// recreate and repopulate them. Both statements are no-ops on a fresh

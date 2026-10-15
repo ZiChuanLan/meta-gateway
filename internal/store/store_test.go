@@ -190,7 +190,7 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	db := openTestDB(t)
 	// Keep this in step with the newest NNN_*.sql file: it is the tripwire that
 	// catches a migration that silently failed to apply (or applied twice).
-	const wantMigrations = 139
+	const wantMigrations = 140
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
@@ -1722,14 +1722,14 @@ func TestProxyLogObservabilityMeta(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
-	if err := db.ProxyLog.UpdateMetaByRequestID("req-meta", 42, "cli"); err != nil {
+	if err := db.ProxyLog.UpdateMetaByRequestID("req-meta", 42, "cli", "pi (win32 10.0.26300; x64)"); err != nil {
 		t.Fatalf("update meta: %v", err)
 	}
 	logs, err := db.ProxyLog.List(10)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(logs) != 1 || logs[0].FirstByteMs != 42 || logs[0].ClientFamily != "cli" {
+	if len(logs) != 1 || logs[0].FirstByteMs != 42 || logs[0].ClientFamily != "cli" || logs[0].ClientUA != "pi (win32 10.0.26300; x64)" {
 		t.Fatalf("observability meta not persisted: %+v", logs)
 	}
 }

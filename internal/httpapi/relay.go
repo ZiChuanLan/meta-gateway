@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/lan/meta-gateway/internal/domain"
 	"github.com/lan/meta-gateway/internal/livetrace"
@@ -587,7 +588,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 
 	requestID, _ := r.Context().Value(chimw.RequestIDKey).(string)
 	keyID, _ := auth.DownstreamKeyID(r)
-	clientFamily := ClientFamilyOf(r)
+	clientFamily, clientUA := clientIdentity(r)
 
 	// Live-trace hook: same as forwardModelRequest.
 	clientKeyName := ""
@@ -630,7 +631,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 	var lastProgress time.Time
 	h.writeObservedUpstreamResult(
 		w, watchCtx, proxyReq, meta, result, forceSSE,
-		h.attemptAccountant(proxyReq, meta, requestID, clientFamily),
+		h.attemptAccountant(proxyReq, meta, requestID, clientFamily, clientUA),
 		func(bytesSent int64) {
 			// Throttled stream progress for the live view (~1 update/s).
 			if h.liveTrace == nil || requestID == "" {
@@ -840,7 +841,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 	if len(downstreamProtocol) > 0 && downstreamProtocol[0] != "" {
 		downstream = downstreamProtocol[0]
 	}
-	clientFamily := ClientFamilyOf(r)
+	clientFamily, clientUA := clientIdentity(r)
 
 	clientKeyName := ""
 	if key := auth.DownstreamKey(r); key != nil {
@@ -913,7 +914,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 			}
 			h.proxy.RecordUsage(proxyReq, channelID, status, tokens)
 			if h.db != nil && h.db.ProxyLog != nil && requestID != "" {
-				if err := h.db.ProxyLog.UpdateMetaByRequestID(requestID, firstByteMs, clientFamily); err != nil {
+				if err := h.db.ProxyLog.UpdateMetaByRequestID(requestID, firstByteMs, clientFamily, clientUA); err != nil {
 					log.Printf("relay: update log meta request_id=%s: %v", requestID, err)
 				}
 			}
@@ -1128,14 +1129,51 @@ func clientHeaders(h http.Header) map[string]string {
 const streamEstimateBytesPerToken = 4
 
 // ClientFamily classifies a User-Agent into a coarse client family for audit
-// and troubleshooting. Unknown agents fall back to "unknown".
+// and troubleshooting.
+//
+// Unrecognized agents are "unknown", never "browser": only a UA that leads with
+// "Mozilla/" is evidence of a browser, and filing everything else under that
+// name both states something false and destroys the signal — the whole point of
+// the rows that used to read "browser" is that their client was not identified.
+// The raw User-Agent rides along on the same row (proxy_logs.client_ua), so an
+// unknown client stays answerable instead of merely unnamed.
+//
+// The signatures are the ones the clients actually send — captured from the
+// installed CLIs on 2026-10-15 by pointing each one at a header-echo server:
+//
+//	pi          pi (win32 10.0.26300; x64)
+//	claude-code claude-cli/2.1.207 (external, sdk-cli)   + x-app: cli
+//	opencode    opencode/1.18.34 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14
+//	codex       codex_exec/0.155.1 (Windows 10.0.26300; x86_64) pebrel/2.2.0_…
+//	gemini-cli  GeminiCLI/0.62.0/gemini-3-pro (win32; x64; interactive)
+//	dsh         deepseek-harness/0.2.0-rc.2 (+https://github.com/deepseek-ai/deepseek-harness)
 func ClientFamily(userAgent string) string {
-	ua := strings.ToLower(userAgent)
+	ua := strings.ToLower(strings.TrimSpace(userAgent))
+	if ua == "" {
+		return "unknown"
+	}
 	switch {
-	case strings.Contains(ua, "claude-code"), strings.Contains(ua, "claude code"):
+	// Claude Code sends `claude-cli/<ver> (external, cli|sdk-cli)`; the
+	// `claude-code/…` shape is what third-party shims and older builds send.
+	case strings.Contains(ua, "claude-cli"), strings.Contains(ua, "claude-code"), strings.Contains(ua, "claude code"):
 		return "claude-code"
 	case strings.Contains(ua, "claudedesktop"), strings.Contains(ua, "claude-desktop"), strings.Contains(ua, "claude desktop"):
 		return "claude-desktop"
+	// Codex leads with its originator: codex_cli_rs (TUI), codex_exec (headless).
+	case strings.Contains(ua, "codex"):
+		return "codex"
+	case strings.Contains(ua, "geminicli"), strings.Contains(ua, "gemini-cli"):
+		return "gemini-cli"
+	case strings.Contains(ua, "opencode"):
+		return "opencode"
+	// dsh identifies as DeepSeek's harness, not as "dsh".
+	case strings.Contains(ua, "deepseek-harness"):
+		return "dsh"
+	// pi's own string is `pi (<os> <release>; <arch>)` — short enough that a
+	// substring test would also catch unrelated agents (`api/v1/…`), so it is
+	// anchored at the start of the UA.
+	case strings.HasPrefix(ua, "pi/"), strings.HasPrefix(ua, "pi ("), strings.Contains(ua, "pi-coding-agent"):
+		return "pi"
 	case strings.Contains(ua, "cherrystudio"), strings.Contains(ua, "cherry studio"):
 		return "cherry-studio"
 	case strings.Contains(ua, "lobehub"), strings.Contains(ua, "lobechat"), strings.Contains(ua, "lobe-chat"), strings.Contains(ua, "lobe chat"):
@@ -1146,15 +1184,14 @@ func ClientFamily(userAgent string) string {
 		return "nextchat"
 	case strings.Contains(ua, "opencat"):
 		return "opencat"
+	case strings.Contains(ua, "kilo-code"), strings.Contains(ua, "kilocode"):
+		return "kilo-code"
 	case strings.Contains(ua, "copilot"):
 		return "copilot"
 	case strings.Contains(ua, "cursor"):
 		return "cursor"
 	case strings.Contains(ua, "windsurf"):
 		return "windsurf"
-	case strings.Contains(ua, "pi-coding-agent"),
-		(strings.Contains(ua, "pi/") && !strings.Contains(ua, "api/")):
-		return "pi"
 	case strings.Contains(ua, "anthropic"):
 		return "anthropic"
 	case strings.Contains(ua, "openai") && strings.Contains(ua, "python"):
@@ -1171,18 +1208,56 @@ func ClientFamily(userAgent string) string {
 		return "postman"
 	case strings.Contains(ua, "insomnia"):
 		return "insomnia"
-	default:
-		if strings.TrimSpace(userAgent) == "" {
-			return "unknown"
-		}
+	case strings.HasPrefix(ua, "mozilla/"):
 		return "browser"
+	default:
+		return "unknown"
 	}
+}
+
+// maxClientUALen caps the stored User-Agent. The header is client-supplied and
+// may be kilobytes long; a log row only needs enough of it to name the client.
+const maxClientUALen = 200
+
+// clientUAString is the User-Agent as stored on the log row: trimmed, stripped
+// of control characters (it is rendered in a table cell, a CSV export and the
+// JSON API) and capped by rune so a multi-byte character is never cut in half.
+func clientUAString(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	ua := strings.Map(func(ch rune) rune {
+		switch {
+		case ch == '\t':
+			return ' '
+		case unicode.IsControl(ch):
+			return -1
+		default:
+			return ch
+		}
+	}, strings.TrimSpace(r.UserAgent()))
+	if ua == "" {
+		return ""
+	}
+	if runes := []rune(ua); len(runes) > maxClientUALen {
+		ua = string(runes[:maxClientUALen])
+	}
+	return ua
+}
+
+// clientIdentity is the caller's client as recorded on the log row: the coarse
+// family plus the raw string it was classified from. Both, because the family
+// names what the classifier knows and the string covers every client it does
+// not.
+func clientIdentity(r *http.Request) (family, ua string) {
+	return ClientFamilyOf(r), clientUAString(r)
 }
 
 // ClientFamilyOf classifies the caller client from the request: an explicit
 // X-Meta-Client header wins (let clients self-identify), then the User-Agent,
-// then request-body signals for Anthropic-protocol callers (Claude Code uses
-// the /v1/messages shape with an anthropic-version header).
+// then request signals for Anthropic-protocol callers (Claude Code's UA is
+// opaque to a family list, and the anthropic-version header plus the
+// /v1/messages path pin the protocol down).
 func ClientFamilyOf(r *http.Request) string {
 	if r == nil {
 		return "unknown"
@@ -1199,9 +1274,9 @@ func ClientFamilyOf(r *http.Request) string {
 	if family := ClientFamily(r.UserAgent()); family != "unknown" {
 		return family
 	}
-	// Anthropic-protocol callers often send no distinctive UA (Claude Code
-	// sends an opaque UA); the anthropic-version header + /v1/messages path
-	// pin them down.
+	// Reached only when the UA is empty or unrecognized. It used to be
+	// unreachable for every request that carried a UA at all, because the
+	// classifier answered "browser" for anything it did not know.
 	if r.Header.Get("anthropic-version") != "" && strings.HasPrefix(r.URL.Path, "/v1/messages") {
 		return "anthropic"
 	}
@@ -1211,10 +1286,11 @@ func ClientFamilyOf(r *http.Request) string {
 // knownClientFamilies is the validated set for X-Meta-Client and the bucket
 // dimension; keep in sync with ClientFamily's outputs.
 var knownClientFamilies = []string{
-	"claude-code", "claude-desktop", "cherry-studio", "lobe", "chatbox",
-	"nextchat", "opencat", "copilot", "cursor", "windsurf", "pi", "anthropic",
-	"openai-python", "openai", "cli", "python", "node", "postman",
-	"insomnia", "browser", "unknown",
+	"claude-code", "claude-desktop", "codex", "gemini-cli", "opencode", "dsh",
+	"cherry-studio", "lobe", "chatbox", "nextchat", "opencat", "kilo-code",
+	"copilot", "cursor", "windsurf", "pi", "anthropic", "openai-python",
+	"openai", "cli", "python", "node", "postman", "insomnia", "browser",
+	"unknown",
 }
 
 // sseKeepaliveInterval is how long a streaming response may stay silent

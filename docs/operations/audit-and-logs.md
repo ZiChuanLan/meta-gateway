@@ -62,7 +62,15 @@ curl -X POST -H "Authorization: Bearer <session_token>" \
 | `upstream_key_id` / `upstream_key_name` | 服务本次尝试的上游凭据 |
 | `key_fingerprint` | 同一把上游密钥的 sha256 前缀 |
 | `status` / `latency_ms` / `first_byte_ms` / `tps` | 结果与性能 |
-| `client_family` | 从 User-Agent 归一出客户端家族 |
+| `client_family` | 从 User-Agent 归一出客户端家族（`pi` / `claude-code` / `opencode` / `codex` / `gemini-cli` / `dsh` …，认不出的记 `unknown`，**不再一律记 `browser`**） |
+| `client_ua` | **原始 User-Agent**（截断 200 字符、剥离控制字符）。家族表只能收录被想到的客户端，认出并点名一个未知客户端靠的是这个字符串 |
+
+> 客户端家族是二分类的结果，原始 UA 是证据。日志展开区的「入口」那一跳优先显示原始 UA；两者都在，认错/认不出时才可追问。
+
+### 客户端自报家门
+
+客户端可以带 `X-Meta-Client: <家族名>` 主动声明身份，优先级高于 User-Agent（值必须在已知家族名单内，否则忽略）。
+网关自身识别不了的客户端，日志会照原样记下 `client_ua`，从它出发再补一条规则即可。
 
 ### 按维度钻取
 
@@ -78,7 +86,9 @@ curl -s -H "Authorization: Bearer <session_token>" \
 
 ### 全文检索与 FTS5
 
-日志支持全文检索。**FTS5 索引的列是固定的**：启动时 `logfts.go` 会比对 `PRAGMA table_info(proxy_logs_fts)` 与期望列，缺列就 drop 表 + 触发器再重建。
+日志支持全文检索。索引列：`model`、`error_brief`、`error_detail`、`path`、`request_id`、`upstream_request_id`、`upstream_url`、`client_ua`——所以「哪些请求来自 opencode」直接搜 `opencode` 即可。
+
+**FTS5 索引的列是固定的**：启动时 `logfts.go` 会比对 `PRAGMA table_info(proxy_logs_fts)` 与期望列，缺列就 drop 表 + 触发器再重建。
 
 > [!WARNING]
 > 不做这一步的后果很严重：新触发器引用一个不存在的列，会让**每一次 `proxy_logs` 写入失败**——日志静默丢失，而 FTS5 是编译期选项，这个失败不能中断启动。

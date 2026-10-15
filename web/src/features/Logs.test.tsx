@@ -218,6 +218,7 @@ describe("log row drill-down", () => {
         route_pattern: "gpt-*",
         path: "chat/completions",
         client_family: "claude-cli",
+        client_ua: "claude-cli/2.1.207 (external, sdk-cli)",
         stream: true,
         first_byte_ms: 300,
         downstream_key_id: 9,
@@ -255,6 +256,12 @@ describe("log row drill-down", () => {
     // The stored path is the relay's endpoint name; the client's ingress path
     // has the /v1 prefix it is mounted under.
     expect(within(chain).getByText("/v1/chat/completions")).toBeInTheDocument();
+    // The ingress hop names the client by its raw User-Agent rather than by the
+    // coarse bucket: the bucket only covers clients the classifier was taught,
+    // and the string is what identifies everyone else.
+    expect(
+      within(chain).getByText(/claude-cli\/2\.1\.207 \(external, sdk-cli\)/),
+    ).toBeInTheDocument();
     expect(
       within(chain).getByText("https://up.example.com/v1/chat/completions"),
     ).toBeInTheDocument();

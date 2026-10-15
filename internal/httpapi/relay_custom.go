@@ -120,7 +120,7 @@ func (h *RelayHandler) customPath(w http.ResponseWriter, r *http.Request) {
 
 	requestID, _ := r.Context().Value(chimw.RequestIDKey).(string)
 	keyID, _ := auth.DownstreamKeyID(r)
-	clientFamily := ClientFamilyOf(r)
+	clientFamily, clientUA := clientIdentity(r)
 
 	clientKeyName := ""
 	if key := auth.DownstreamKey(r); key != nil {
@@ -164,7 +164,7 @@ func (h *RelayHandler) customPath(w http.ResponseWriter, r *http.Request) {
 	setHookDecisionHeader(w.Header(), meta)
 	h.writeObservedUpstreamResult(
 		w, watchCtx, proxyReq, meta, result, request.Stream,
-		h.attemptAccountant(proxyReq, meta, requestID, clientFamily),
+		h.attemptAccountant(proxyReq, meta, requestID, clientFamily, clientUA),
 		func(int64) {
 			// Custom paths carry no known stream contract, so the live view gets
 			// no byte-progress rumble; the request still shows as running.

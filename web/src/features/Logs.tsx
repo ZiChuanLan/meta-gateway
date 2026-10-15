@@ -209,7 +209,16 @@ function LogChain({
   const { t } = useI18n();
   const knownTokenName = log.downstream_key_id ? keyName.get(log.downstream_key_id) : undefined;
   const tokenLabel = knownTokenName ?? (log.downstream_key_id ? `#${log.downstream_key_id}` : null);
-  const ingressNote = [log.client_family, log.stream ? t("logsPage.chainStream") : null]
+  /**
+   * The ingress note names the client. The raw User-Agent is preferred over the
+   * family bucket: the bucket only names clients the classifier was taught
+   * (everything else used to read "browser"), while the string always says who
+   * called. Rows written before client_ua existed keep the bucket.
+   */
+  const ingressNote = [
+    log.client_ua || log.client_family,
+    log.stream ? t("logsPage.chainStream") : null,
+  ]
     .filter(Boolean)
     .join(" · ");
   // proxy_logs.path stores the endpoint relative to the API root (the relay's
