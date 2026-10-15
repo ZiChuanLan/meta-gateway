@@ -10,10 +10,12 @@
 | `BALANCE_HISTORY_RETENTION_DAYS` | 90 | `balance_history` |
 | `DECISION_SNAPSHOT_RETENTION_DAYS` | 7 | `decision_snapshots` |
 | `MODEL_CHANGE_RETENTION_DAYS` | 90 | `model_changes`（已完成的） |
-| `SITE_PROBE_RETENTION_DAYS` | 7 | `site_probe_runs` + `site_probe_samples` |
+| `SITE_PROBE_RETENTION_DAYS` | 7 | `site_probe_runs` + `site_probe_samples` + `site_probe_external_history` |
 
 > [!WARNING]
 > **站点探针的窗口要刻意给值。** 每一轮采集会为「每个被监控模型 × 每个站点」写一行，它是整个库里写入量最高的历史表。只有当真有东西在画这份历史时，才值得把它调大。
+>
+> 这个窗口同时是两个时间格能回看多久：站点自报的格由样本折叠而来（一次采集一格），第三方参考的格由每次拉取的读数列来（每对每小时一行）。
 
 ## 审计事件
 

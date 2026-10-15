@@ -73,3 +73,6 @@ docs/marketing/_art/
 
 # Verification screenshots: kept on the machine that took them, not in the repo.
 audit/evidence/
+# Agent planning scratch: `.pi/plans/*.md` are per-session working notes that the
+# work they describe supersedes once it ships. Never committed.
+.pi/
