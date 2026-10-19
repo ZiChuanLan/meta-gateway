@@ -625,6 +625,12 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 						result.FirstByteMs = int(s.now().Sub(forwardStarted).Milliseconds())
 					}
 				}
+				// Plugin stream hook: the streaming half of the response point.
+				// Every SSE event of the client-facing stream is offered on its
+				// own; a non-streaming answer took the complete-body path above.
+				if interceptor := s.hookEnabled(); interceptor != nil {
+					result = s.applyEventHook(ctx, &req, &candidate, effectiveModel, attempt+1, result, interceptor)
+				}
 				if attemptCancel != nil {
 					if result != nil && result.Err == nil && result.Body != nil {
 						result.Body = &cancelBoundBody{ReadCloser: result.Body, cancel: attemptCancel}

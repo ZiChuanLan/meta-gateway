@@ -50,6 +50,10 @@ type hookPluginConfig struct {
 	// DeclareRequest / DeclareResponse add the later points to the manifest.
 	DeclareRequest  bool
 	DeclareResponse bool
+	// DeclareEvent adds the streaming point; EventBody replaces every JSON
+	// event's payload ("" = decline).
+	DeclareEvent bool
+	EventBody    string
 	// RequestBody replaces the upstream body at the request hook ("" = decline).
 	RequestBody string
 	// ResponseBody replaces the client-visible body at the response hook.
@@ -68,11 +72,13 @@ type hookPluginServer struct {
 	routeCalls    atomic.Int64
 	requestCalls  atomic.Int64
 	responseCalls atomic.Int64
+	eventCalls    atomic.Int64
 
 	mu             sync.Mutex
 	lastRouteInput map[string]any
 	lastReqInput   map[string]any
 	lastRespInput  map[string]any
+	lastEventInput map[string]any
 }
 
 func (p *hookPluginServer) counts() (route, request, response int64) {
@@ -129,6 +135,13 @@ func (p *hookPluginServer) handle(w http.ResponseWriter, r *http.Request) {
 					"timeout_ms":   500,
 				}
 			}
+			if p.cfg.DeclareEvent {
+				hooks["event"] = map[string]any{
+					"path":         "/hooks/event",
+					"match_models": []string{"gpt-real"},
+					"timeout_ms":   500,
+				}
+			}
 			manifest["hooks"] = hooks
 		}
 		writeHookJSON(w, manifest)
@@ -179,6 +192,18 @@ func (p *hookPluginServer) handle(w http.ResponseWriter, r *http.Request) {
 			"body":    json.RawMessage(p.cfg.ResponseBody),
 			"reason":  "rewrote the answer",
 		})
+	case "/hooks/event":
+		p.eventCalls.Add(1)
+		p.storeInput(r, &p.lastEventInput)
+		if p.cfg.EventBody == "" {
+			writeHookJSON(w, map[string]any{"handled": false})
+			return
+		}
+		writeHookJSON(w, map[string]any{
+			"handled": true,
+			"body":    json.RawMessage(p.cfg.EventBody),
+			"reason":  "rewrote a stream event",
+		})
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
@@ -217,13 +242,32 @@ func newEchoUpstream(t *testing.T) *echoUpstream {
 	upstream.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var payload struct {
-			Model string `json:"model"`
+			Model  string `json:"model"`
+			Stream bool   `json:"stream"`
 		}
 		_ = json.Unmarshal(raw, &payload)
 		upstream.mu.Lock()
 		upstream.models = append(upstream.models, payload.Model)
 		upstream.bodies = append(upstream.bodies, string(raw))
 		upstream.mu.Unlock()
+		if payload.Stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			flusher, _ := w.(http.Flusher)
+			fmt.Fprintf(w, "data: {\"id\":\"cmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":%q,\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"\"}}]}\n\n", payload.Model)
+			if flusher != nil {
+				flusher.Flush()
+			}
+			fmt.Fprintf(w, "data: {\"id\":\"cmpl-1\",\"object\":\"chat.completion.chunk\",\"model\":%q,\"choices\":[{\"index\":0,\"delta\":{\"content\":\"upstream answer\"},\"finish_reason\":\"stop\"}]}\n\n", payload.Model)
+			if flusher != nil {
+				flusher.Flush()
+			}
+			fmt.Fprint(w, "data: [DONE]\n\n")
+			if flusher != nil {
+				flusher.Flush()
+			}
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"id":"cmpl-1","object":"chat.completion","model":%q,"choices":[{"index":0,"message":{"role":"assistant","content":"upstream answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}`, payload.Model)
 	}))
@@ -576,5 +620,47 @@ func TestPluginHooksRequireInterceptPermission(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), plugins.InterceptPermission) {
 		t.Fatalf("error = %v, want it to name the missing permission", err)
+	}
+}
+
+// A streaming answer reaches the plugin one event at a time: the JSON events
+// are rewritten, the [DONE] sentinel is left alone, and the client still gets a
+// coherent SSE stream.
+func TestPluginEventHookRewritesStream(t *testing.T) {
+	upstream := newEchoUpstream(t)
+	plugin := newHookPlugin(t, hookPluginConfig{
+		ID:           "hook-stream",
+		DeclareEvent: true,
+		EventBody:    `{"id":"cmpl-1","object":"chat.completion.chunk","model":"gpt-real","choices":[{"index":0,"delta":{"content":"rewritten by the plugin"},"finish_reason":"stop"}]}`,
+	})
+	serverURL, token := setupPluginGateway(t, upstream.URL, plugin)
+
+	status, body, header := relayChatHeaders(t, serverURL, token,
+		`{"model":"gpt-real","stream":true,"messages":[{"role":"user","content":"hi"}]}`, nil)
+	if status != http.StatusOK {
+		t.Fatalf("status %d body %s", status, body)
+	}
+	if contentType := header.Get("Content-Type"); !strings.Contains(contentType, "event-stream") {
+		t.Fatalf("content type = %q, want an SSE stream", contentType)
+	}
+	text := string(body)
+	if !strings.Contains(text, "rewritten by the plugin") {
+		t.Fatalf("client stream = %s, want the plugin's rewrite", text)
+	}
+	if strings.Contains(text, "upstream answer") {
+		t.Fatalf("client stream = %s, want the upstream payload replaced", text)
+	}
+	if !strings.Contains(text, "[DONE]") {
+		t.Fatalf("client stream = %s, want the [DONE] sentinel kept", text)
+	}
+	// Two JSON events went to the plugin; the sentinel did not.
+	if calls := plugin.eventCalls.Load(); calls != 2 {
+		t.Fatalf("event hook calls = %d, want 2", calls)
+	}
+	plugin.mu.Lock()
+	input := plugin.lastEventInput
+	plugin.mu.Unlock()
+	if input == nil || input["hook"] != "event" {
+		t.Fatalf("event hook input = %+v, want hook=event", input)
 	}
 }

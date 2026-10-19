@@ -17,7 +17,7 @@ import (
 
 // Plugin hook seam.
 //
-// A sidecar plugin may declare three interception points along the forward
+// A sidecar plugin may declare four interception points along the forward
 // pipeline. The proxy owns the contract; internal/httpapi supplies the
 // implementation (the plugin host), so this package never imports the plugin
 // machinery — the same shape as LiveTraceObserver.
@@ -45,10 +45,13 @@ const (
 	HookRequest HookPoint = "request"
 	// HookResponse runs on a successful NON-STREAMING answer, after it has been
 	// converted to the downstream contract and before the client sees it.
-	// Streaming answers are deliberately not offered: an SSE stream is copied
-	// chunk by chunk, so there is no complete document for a plugin to rewrite
-	// (and buffering one would destroy the streaming latency it exists for).
+	// Streaming answers are offered to HookEvent instead: an SSE stream is
+	// copied chunk by chunk, so there is no complete document to rewrite.
 	HookResponse HookPoint = "response"
+	// HookEvent runs on each event of a streaming answer, after the stream has
+	// been converted to the downstream contract and before the client sees it.
+	// A decision may replace the event's JSON payload or drop the event.
+	HookEvent HookPoint = "event"
 )
 
 // HookInput is the context handed to a plugin. Point is always set; every
@@ -85,6 +88,9 @@ type HookInput struct {
 	StatusCode int `json:"status_code,omitempty"`
 	// LatencyMs is HookResponse-only: the upstream round-trip time.
 	LatencyMs int `json:"latency_ms,omitempty"`
+	// EventName is HookEvent-only: the SSE event name (empty for the default
+	// "message" type), so a plugin can ignore frames it does not understand.
+	EventName string `json:"event_name,omitempty"`
 }
 
 // HookReject aborts a request instead of forwarding it.
@@ -116,6 +122,9 @@ type HookResult struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	// Status rewrites the client-visible status code (HookResponse only).
 	Status int `json:"status,omitempty"`
+	// Drop removes the event from the stream (HookEvent only). A dropped event
+	// is not replaced by an empty one: nothing is written for that frame.
+	Drop bool `json:"drop,omitempty"`
 	// Reject aborts the request with this status instead of forwarding it.
 	Reject *HookReject `json:"reject,omitempty"`
 	// The fields below are gateway bookkeeping, not part of the wire contract.

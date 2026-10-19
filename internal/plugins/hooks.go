@@ -43,6 +43,7 @@ const (
 	HookPointRoute    = "route"
 	HookPointRequest  = "request"
 	HookPointResponse = "response"
+	HookPointEvent    = "event"
 
 	// InterceptPermission is the manifest permission a plugin must declare
 	// before any of its hooks are loaded. Interception exposes the operator's
@@ -52,6 +53,10 @@ const (
 
 	// defaultHookTimeoutMs bounds a hook call that declares no timeout.
 	defaultHookTimeoutMs = 800
+	// defaultEventHookTimeoutMs is the same bound for the event point, which is
+	// called once per streamed frame instead of once per request: a per-request
+	// budget spent on every event would serialize the whole stream.
+	defaultEventHookTimeoutMs = 100
 	// minHookTimeoutMs / maxHookTimeoutMs bound what a declaration may ask for.
 	// A multi-second hook is indistinguishable from an outage on the hot path.
 	minHookTimeoutMs = 50
@@ -111,6 +116,7 @@ type HookSet struct {
 	Route    *HookDeclaration `json:"route,omitempty"`
 	Request  *HookDeclaration `json:"request,omitempty"`
 	Response *HookDeclaration `json:"response,omitempty"`
+	Event    *HookDeclaration `json:"event,omitempty"`
 }
 
 // declarations returns the declared points in a stable order, skipping unset
@@ -129,6 +135,7 @@ func (h *HookSet) declarations() []struct {
 		{HookPointRoute, h.Route},
 		{HookPointRequest, h.Request},
 		{HookPointResponse, h.Response},
+		{HookPointEvent, h.Event},
 	}
 	out := make([]struct {
 		Point string
@@ -147,7 +154,7 @@ func (h *HookSet) Empty() bool {
 	if h == nil {
 		return true
 	}
-	return h.Route == nil && h.Request == nil && h.Response == nil
+	return h.Route == nil && h.Request == nil && h.Response == nil && h.Event == nil
 }
 
 // validateHookDeclaration rejects a declaration that could not be called
@@ -228,6 +235,9 @@ func (e hookEntry) hookTimeout() time.Duration {
 	ms := e.decl.TimeoutMs
 	if ms <= 0 {
 		ms = defaultHookTimeoutMs
+		if e.point == HookPointEvent {
+			ms = defaultEventHookTimeoutMs
+		}
 	}
 	return time.Duration(ms) * time.Millisecond
 }
@@ -429,7 +439,7 @@ func (s *Service) HookPointsFor(id string) []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var points []string
-	for _, point := range []string{HookPointRoute, HookPointRequest, HookPointResponse} {
+	for _, point := range []string{HookPointRoute, HookPointRequest, HookPointResponse, HookPointEvent} {
 		for _, entry := range s.hookEntries[point] {
 			if entry.pluginID == id {
 				points = append(points, point)
