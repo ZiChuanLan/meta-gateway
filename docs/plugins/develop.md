@@ -19,9 +19,21 @@
 | :--- | :--- |
 | `id` / `name` / `version` | 身份 |
 | 页面路径 | 控制台用 iframe 内嵌展示 |
+| `entrypoint` / `run_args` | 托管进程启动什么（见下） |
 | `config_fields` | 声明配置项（见下） |
 | `permissions` | 声明式权限，`resource:action` 格式 |
 | `hooks` | 拦截钩子声明（见[拦截钩子](./hooks)） |
+
+### entrypoint：包里的文件，或宿主的运行时
+
+托管进程执行的东西两种写法，**包里的同名文件优先**：
+
+| 写法 | 含义 |
+| :--- | :--- |
+| `plugin` / `bin/plugin` | 包里自带的文件（只允许定位在插件目录内） |
+| `node` / `python3` | 裸名：不在包里时按 PATH 找宿主提供的解释器，`run_args` 里用 `{plugin_dir}` 指向包里的程序 |
+
+第二种是**推荐形态**：程序不带运行时，一个包通用于所有平台（官方镜像自带 `nodejs`）。裸名不接受分隔符，所以 `../node` 这类写法仍然被拒；宿主机上没有该解释器时启动会报 `plugin_entrypoint_unavailable`。
 
 ## 三、配置字段（`config_fields`）
 
