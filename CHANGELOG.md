@@ -4,6 +4,12 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v4.7.1] - 2026-10-20
+
+### Fixed
+
+- **团队模式（cookie 会话）下 sidecar 插件页不再永远 401。** 团队模式登录拿到的是 cookie，浏览器里**没有** bearer 令牌；而插件页是一次 iframe 导航，只能把令牌放在 `?t=` 里，于是请求带的是空值，网关的插件代理（只认 `?t=`/`Authorization`）一律回 `{"error":"unauthorized"}` —— 退出重登也不会变，因为重登同样不产生令牌。控制台现在先向新增的 `POST /admin/plugins/{id}/embed-token` 要一个**10 分钟有效**的签名会话令牌再挂 iframe（复用登录那套签名与校验，没有第二条鉴权路径；有效期比 bearer 模式下直接塞 12 小时令牌进 URL 更短）。令牌取不到时页面显示「插件页面加载失败」而不是把后端 JSON 原样铺在窗口里。个人（bearer）模式行为不变。
+
 ## [v4.7.0] - 2026-10-20
 
 ### Added

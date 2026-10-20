@@ -27,6 +27,10 @@ const (
 
 type PluginHandler struct {
 	service *plugins.Service
+	// mintEmbedToken issues the short-lived bearer a console without one can put
+	// in the iframe URL. Wired by the router to the same signer the login uses, so
+	// there is no second way to authenticate.
+	mintEmbedToken func() (string, error)
 	// verifyAdmin validates an admin token (raw or session). Wired by
 	// SetTokenVerifier for the public proxy route, which accepts the token
 	// via ?t= because iframes cannot send Authorization headers.
@@ -37,10 +41,20 @@ func NewPluginHandler(service *plugins.Service) *PluginHandler {
 	return &PluginHandler{service: service}
 }
 
+// pluginEmbedTokenTTL bounds the bearer that ends up in an iframe URL, which is
+// the one place a credential is exposed to browser history. Ten minutes is
+// enough to load the page; the console mints another when it needs one.
+const pluginEmbedTokenTTL = 10 * time.Minute
+
 // SetTokenVerifier wires the admin token validator used by the public
 // sidecar proxy route (Authorization header or ?t= query).
 func (h *PluginHandler) SetTokenVerifier(fn func(string) bool) {
 	h.verifyAdmin = fn
+}
+
+// SetEmbedTokenMinter wires the signer behind /plugins/{id}/embed-token.
+func (h *PluginHandler) SetEmbedTokenMinter(fn func() (string, error)) {
+	h.mintEmbedToken = fn
 }
 
 func (h *PluginHandler) Register(r chi.Router) {
@@ -56,10 +70,36 @@ func (h *PluginHandler) Register(r chi.Router) {
 	r.Post("/plugins/{id}/activate", h.activate)
 	r.Post("/plugins/{id}/install", h.install)
 	r.Post("/plugins/{id}/enable", h.enable)
+	r.Post("/plugins/{id}/embed-token", h.embedToken)
 	r.Post("/plugins/{id}/disable", h.disable)
 	r.Delete("/plugins/{id}", h.uninstall)
 	r.Get("/plugins/{id}/config", h.getPluginConfig)
 	r.Put("/plugins/{id}/config", h.putPluginConfig)
+}
+
+// embedToken mints the bearer an embedded plugin page authenticates with. The
+// console normally already holds one, but a cookie-session login (team mode)
+// has no token to put in the iframe URL at all — the page would then be
+// requested with an empty ?t= and the public proxy route rightly refuses it.
+// Minting here reuses the login signer, so nothing new can authenticate.
+func (h *PluginHandler) embedToken(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if !h.service.IsEnabled(id) {
+		writeError(w, http.StatusNotFound, "plugin_not_enabled")
+		return
+	}
+	if h.mintEmbedToken == nil {
+		writeError(w, http.StatusServiceUnavailable, "plugin_token_unavailable")
+		return
+	}
+	token, err := h.mintEmbedToken()
+	if err != nil || token == "" {
+		slog.Warn("plugin embed token", "id", id, "error", err)
+		writeError(w, http.StatusInternalServerError, "plugin_token_failed")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]string{"token": token})
 }
 
 // marketList returns the plugin market: all installable entries from every

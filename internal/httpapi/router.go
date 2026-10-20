@@ -526,6 +526,12 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 				return auth.VerifySessionToken(sessionKey, s)
 			})
 		})
+		// A cookie-session console has no token to hand the iframe, so it asks for
+		// one here; the token is the same signed session the login issues, only
+		// with a lifetime that fits a page load.
+		pluginHandler.SetEmbedTokenMinter(func() (string, error) {
+			return auth.SignSessionToken(sessionKey, pluginEmbedTokenTTL)
+		})
 		pluginHandler.Register(adminGroup)
 		// Public proxy route for iframe embedding (self-verifies ?t=/header).
 		// Registered before r.Mount("/admin", …) so it wins the match.

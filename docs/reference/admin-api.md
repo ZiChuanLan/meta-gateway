@@ -7,7 +7,7 @@
 鉴权：`Authorization: Bearer <session_token>`，由 `POST /admin/session` 换取。`/admin/session` 本身与少数公开入口除外。
 除特别说明外，请求与响应都是 JSON；请求体上限由 `MAX_ADMIN_BODY_BYTES` 约束。
 
-共 **251** 条注册、**203** 个路径、Delete、Get、Patch、Post、Put 方法。
+共 **252** 条注册、**204** 个路径、Delete、Get、Patch、Post、Put 方法。
 
 ## /admin/(root) · 1 条
 
@@ -327,7 +327,7 @@
 | `Get` | `/admin/operator-profile` | operatorProfile |
 | `Post` | `/admin/operator-profile` | saveOperatorProfile |
 
-## /admin/plugins · 15 条
+## /admin/plugins · 16 条
 
 | 方法 | 路径 | handler |
 | --- | --- | --- |
@@ -344,6 +344,7 @@
 | `Get` | `/admin/plugins/{id}/config` | getPluginConfig |
 | `Put` | `/admin/plugins/{id}/config` | putPluginConfig |
 | `Post` | `/admin/plugins/{id}/disable` | disable |
+| `Post` | `/admin/plugins/{id}/embed-token` | embedToken |
 | `Post` | `/admin/plugins/{id}/enable` | enable |
 | `Post` | `/admin/plugins/{id}/install` | install |
 
