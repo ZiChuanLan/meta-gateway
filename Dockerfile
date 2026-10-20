@@ -27,7 +27,11 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
     -o /bin/meta-gateway ./cmd/server
 
 FROM alpine:3.22
-RUN apk add --no-cache ca-certificates curl \
+# libstdc++ is for hosted plugin processes, not for the gateway itself: a
+# Runtime for JavaScript plugins: a market plugin can declare a bare entrypoint
+# ("node") and ship its program instead of a per-platform binary. tar is what the
+# provider host unpacks npm tarballs with.
+RUN apk add --no-cache ca-certificates curl nodejs tar \
     && addgroup -S -g 10001 metagateway \
     && adduser -S -D -H -u 10001 -G metagateway metagateway \
     && install -d -o metagateway -g metagateway -m 0700 /data /data/backups /update

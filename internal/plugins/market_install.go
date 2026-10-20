@@ -522,12 +522,17 @@ func validatePluginManifestForPackage(manifest *SidecarManifest, pluginDir strin
 	if strings.TrimSpace(manifest.Entrypoint) == "" {
 		return fmt.Errorf("plugin_manifest_missing_entrypoint")
 	}
-	entrypoint, err := resolvePluginPath(pluginDir, manifest.Entrypoint)
-	if err != nil {
-		return fmt.Errorf("plugin_manifest_entrypoint_invalid")
-	}
-	if info, err := os.Stat(entrypoint); err != nil || !info.Mode().IsRegular() {
-		return fmt.Errorf("plugin_manifest_entrypoint_missing")
+	// A file the package ships must be there; a bare name may instead name a
+	// runtime the host provides ("node"), which startManagedPlugin resolves.
+	entrypoint, pathErr := resolvePluginPath(pluginDir, manifest.Entrypoint)
+	if pathErr != nil {
+		if !pluginRuntimeName(manifest.Entrypoint) {
+			return fmt.Errorf("plugin_manifest_entrypoint_invalid")
+		}
+	} else if info, statErr := os.Stat(entrypoint); statErr != nil || !info.Mode().IsRegular() {
+		if !pluginRuntimeName(manifest.Entrypoint) {
+			return fmt.Errorf("plugin_manifest_entrypoint_missing")
+		}
 	}
 	if manifest.PagePath == "" {
 		manifest.PagePath = "/"

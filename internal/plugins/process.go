@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,19 +103,9 @@ func (s *Service) startManagedPlugin(ctx context.Context, id string, spec *Sidec
 	if err != nil {
 		return err
 	}
-	entrypoint, err := resolvePluginPath(pluginDir, spec.Entrypoint)
+	entrypoint, err := pluginEntrypoint(pluginDir, spec.Entrypoint)
 	if err != nil {
-		return fmt.Errorf("plugin_entrypoint_invalid: %w", err)
-	}
-	info, err := os.Stat(entrypoint)
-	if err != nil {
-		return fmt.Errorf("plugin_entrypoint_unavailable: %w", err)
-	}
-	if !info.Mode().IsRegular() {
-		return fmt.Errorf("plugin_entrypoint_not_file")
-	}
-	if err := makePluginExecutable(entrypoint); err != nil {
-		return fmt.Errorf("plugin_entrypoint_not_executable: %w", err)
+		return err
 	}
 
 	s.processMu.Lock()
@@ -129,7 +120,7 @@ func (s *Service) startManagedPlugin(ctx context.Context, id string, spec *Sidec
 	}
 	s.processMu.Unlock()
 
-	addr, err := reservePluginAddress()
+	addr, err := reservePluginAddress(spec.URL)
 	if err != nil {
 		return fmt.Errorf("plugin_port_allocate: %w", err)
 	}
@@ -315,6 +306,48 @@ var httpNewRequestWithContext = func(ctx context.Context, rawURL string) (*http.
 	return http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 }
 
+// pluginEntrypoint resolves what startManagedPlugin exec()s. A file the package
+// ships wins; when there is no such file and the manifest names a bare command
+// ("node", "python3"), the runtime comes from the host instead. That is what
+// lets a JavaScript plugin be one small zip for every architecture rather than
+// one large self-contained executable per platform. Anything with a separator
+// stays confined to the plugin directory.
+func pluginEntrypoint(pluginDir, declared string) (string, error) {
+	entrypoint, pathErr := resolvePluginPath(pluginDir, declared)
+	if pathErr == nil {
+		info, statErr := os.Stat(entrypoint)
+		switch {
+		case statErr == nil && !info.Mode().IsRegular():
+			return "", fmt.Errorf("plugin_entrypoint_not_file")
+		case statErr == nil:
+			if err := makePluginExecutable(entrypoint); err != nil {
+				return "", fmt.Errorf("plugin_entrypoint_not_executable: %w", err)
+			}
+			return entrypoint, nil
+		}
+	}
+	if pluginRuntimeName(declared) {
+		if _, err := exec.LookPath(declared); err != nil {
+			return "", fmt.Errorf("plugin_entrypoint_unavailable: %q is neither in the package nor on PATH", declared)
+		}
+		return declared, nil
+	}
+	if pathErr != nil {
+		return "", fmt.Errorf("plugin_entrypoint_invalid: %w", pathErr)
+	}
+	return "", fmt.Errorf("plugin_entrypoint_unavailable: %q is missing from the package", declared)
+}
+
+// pluginRuntimeName reports whether a manifest entrypoint is a bare command name
+// rather than a path inside the package: no separator, not a dot entry.
+func pluginRuntimeName(entrypoint string) bool {
+	name := strings.TrimSpace(entrypoint)
+	if name == "" || name == "." || name == ".." || strings.HasPrefix(name, ".") {
+		return false
+	}
+	return !strings.ContainsAny(name, `/\\`)
+}
+
 func resolvePluginPath(baseDir, relative string) (string, error) {
 	relative = strings.TrimSpace(relative)
 	if relative == "" || filepath.IsAbs(relative) || strings.ContainsAny(relative, `\\?#%`) {
@@ -354,7 +387,20 @@ func makePluginExecutable(path string) error {
 	return os.Chmod(path, mode)
 }
 
-func reservePluginAddress() (string, error) {
+// reservePluginAddress picks the loopback address the sidecar will listen on.
+// A managed plugin keeps the address it was installed on for as long as that
+// address is still free: its own channel points at it ({url}/v1), and handing
+// out a fresh port on every restart silently breaks that channel — the requests
+// keep going to the old port and fail, with nothing in the plugin's UI to say
+// why. Only 127.0.0.1 URLs are reused; anything else (an operator's own service
+// registered by URL) is not ours to bind.
+func reservePluginAddress(previous string) (string, error) {
+	if addr := reusablePluginAddress(previous); addr != "" {
+		if listener, err := net.Listen("tcp", addr); err == nil {
+			_ = listener.Close()
+			return addr, nil
+		}
+	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", err
@@ -364,6 +410,14 @@ func reservePluginAddress() (string, error) {
 		return "", err
 	}
 	return addr, nil
+}
+
+func reusablePluginAddress(previous string) string {
+	parsed, err := url.Parse(strings.TrimSpace(previous))
+	if err != nil || parsed.Scheme != "http" || parsed.Hostname() != "127.0.0.1" || parsed.Port() == "" {
+		return ""
+	}
+	return parsed.Host
 }
 
 func portFromAddr(addr string) string {

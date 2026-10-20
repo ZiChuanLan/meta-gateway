@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -346,5 +347,68 @@ func TestMarketInstallRejectsEntrypointEscape(t *testing.T) {
 	err := installMarketEntry(t, svc, "demo.helper")
 	if err == nil || !strings.Contains(err.Error(), "plugin_manifest_entrypoint_invalid") {
 		t.Fatalf("expected entrypoint escape rejection, got %v", err)
+	}
+}
+
+// A plugin that ships its program and borrows the host's runtime: the manifest
+// names "node" (a bare name, no such file in the package) and run_args point at
+// the program the package does carry. Nothing in such a package is
+// platform-specific, which is why the market can ship one small zip for every
+// architecture instead of one large self-contained executable each.
+func TestMarketInstallRunsHostRuntimeEntrypoint(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node is not installed on this host")
+	}
+	program := `require("http").createServer((req,res)=>{
+  if (req.url === "/healthz") { res.writeHead(200); res.end("ok"); return }
+  res.writeHead(200); res.end("served by the host runtime")
+}).listen(Number(process.env.META_GATEWAY_PLUGIN_PORT))`
+	manifest, err := json.Marshal(map[string]any{
+		"id":          "js.plugin",
+		"name":        "JS Plugin",
+		"version":     "0.1.0",
+		"entrypoint":  "node",
+		"run_args":    []any{"{plugin_dir}/main.js"},
+		"health_path": "/healthz",
+	})
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, body := range map[string][]byte{"plugin.json": manifest, "main.js": []byte(program)} {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatalf("zip create %s: %v", name, err)
+		}
+		if _, err := w.Write(body); err != nil {
+			t.Fatalf("zip write %s: %v", name, err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip close: %v", err)
+	}
+
+	svc, _ := marketWithArtifact(t, map[string]any{
+		"id": "js.plugin", "name": "JS Plugin", "version": "0.1.0",
+	}, buf.Bytes(), "")
+
+	if err := installMarketEntry(t, svc, "js.plugin"); err != nil {
+		t.Fatalf("InstallMarketFrom: %v", err)
+	}
+	entry, err := svc.catalogEntry("js.plugin")
+	if err != nil || entry.Sidecar == nil || entry.Sidecar.URL == "" {
+		t.Fatalf("catalog entry missing sidecar: %+v err=%v", entry, err)
+	}
+	resp, err := http.Get(strings.TrimRight(entry.Sidecar.URL, "/") + "/healthz")
+	if err != nil {
+		t.Fatalf("health probe: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("health status = %d", resp.StatusCode)
+	}
+	if err := svc.Uninstall("js.plugin"); err != nil {
+		t.Fatalf("Uninstall: %v", err)
 	}
 }
