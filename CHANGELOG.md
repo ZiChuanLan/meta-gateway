@@ -4,6 +4,21 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v4.7.0] - 2026-10-20
+
+### Added
+
+- **插件可以不带运行时。** 托管插件的 `entrypoint` 现在允许写裸名（如 `node`）：包里没有同名文件时按 PATH 找宿主提供的解释器，`run_args` 用 `{plugin_dir}` 指向包里真正的程序。包里的同名文件仍然优先，所以既有插件不受影响。一个 JavaScript 插件因此是**一个 15 KB 的 zip 通用于所有平台**，而不是每个平台一个 39–46 MB 的自包含可执行文件。宿主上没有该运行时会在启动时明确报 `plugin_entrypoint_unavailable`。
+- **流式应答可以逐事件改写。** 拦截钩子新增第四个点位 `event`：一个 SSE 事件一个事件地交给插件，可改写 payload 或丢弃该事件；`[DONE]`、纯文本、畸形 JSON、超过 1 MiB 的帧一律原样通过（fail-open），一条应答最多送 4000 帧，默认超时 100ms。只有声明了 `event` 的插件会付这份成本——没有插件声明时一行都不解析。
+
+### Changed
+
+- **运行镜像补上 `nodejs` 与 `tar`，去掉 `libstdc++`。** 前者是 JS 插件的运行时，后者是插件装 npm 包时解 `.tgz` 用的；`libstdc++` 只是 Bun 编译的单文件需要，那种包现在不必再做了。
+
+### Fixed
+
+- **托管插件重启后不再换监听地址。** 插件的渠道指向 `{plugin_url}/v1`，而每次重启都重新挑一个临时端口，渠道就一直在打旧端口——表现是全 502 且界面上看不出原因。现在插件记录里的 `127.0.0.1` 地址只要仍然空闲就沿用；别人（运维自己注册的 sidecar URL）的地址绝不抢占。
+
 ## [v4.6.5] - 2026-10-15
 
 ### Added
