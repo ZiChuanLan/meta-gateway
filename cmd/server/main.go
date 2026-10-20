@@ -204,6 +204,7 @@ func main() {
 		ExchangeService:     exchangeService,
 		PluginService:       pluginService,
 		OutboundClient:      outboundClient,
+		OutboundPolicy:      outboundPolicy,
 		OutboundImageClient: imageClient,
 		Logger:              logger, Metrics: metrics, State: state,
 		BackupService: backup.NewWithRetention(db, cfg.BackupDir, cfg.BackupRetentionCount),

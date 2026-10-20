@@ -4,6 +4,15 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v4.7.2] - 2026-10-20
+
+### Fixed
+
+- **插件渠道的「获取模型」不再对被策略拦下的地址报 `transport`。** 模型发现走的是出网 SSRF 策略，而托管插件的监听地址恰好是网关自己分配的 `127.0.0.1:<port>`——策略默认拒绝回环与内网，于是「获取模型」永远 502，而同一地址的转发却一直是通的（relay 不走这条策略）。现在网关把每个**已启用**插件的端点（托管进程的 `127.0.0.1:<port>`，或注册 sidecar 的 `host:port`）作为例外交给策略，按端点精确匹配：换个端口的回环地址、其他内网地址照旧被拒，插件禁用/卸载后例外随之消失。**不需要再配 `OUTBOUND_ALLOW_CIDRS`。**
+
+### Changed
+
+- **从插件建渠道不再手填模型名。** 「创建渠道」弹窗去掉模型输入框：提交时先向插件要 `GET /v1/models`，把返回的模型直接作为 `models_csv` 采纳成路由与成员；插件没有登录任何账号（返回空列表）时提示先登录，而不是静默建一个空渠道。
 ## [v4.7.1] - 2026-10-20
 
 ### Fixed

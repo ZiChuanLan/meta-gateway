@@ -33,6 +33,33 @@ type Policy struct {
 	// with an injected Dialer (tests) keeps it and ignores SetDialTimeout.
 	dialer       atomic.Value // Dialer
 	injectedDial bool
+	// targetAllow is a live check for destinations the gateway itself owns (its
+	// own plugin processes plus the sidecar URLs an operator registered). It is
+	// consulted before the address rules because those destinations are decided
+	// at runtime, which a static CIDR list cannot express.
+	targetAllow atomic.Pointer[func(host, port string) bool]
+}
+
+// SetTargetAllowlist installs the live destination check used by DialContext and
+// ValidateDestination. A nil function removes it.
+func (p *Policy) SetTargetAllowlist(fn func(host, port string) bool) {
+	if p == nil {
+		return
+	}
+	if fn == nil {
+		p.targetAllow.Store(nil)
+		return
+	}
+	p.targetAllow.Store(&fn)
+}
+
+// targetAllowed reports whether host:port is a gateway-owned destination.
+func (p *Policy) targetAllowed(host, port string) bool {
+	fn := p.targetAllow.Load()
+	if fn == nil || port == "" {
+		return false
+	}
+	return (*fn)(host, port)
 }
 
 // DefaultDialTimeout is the outbound connect timeout when none is configured.
@@ -145,6 +172,9 @@ func (p *Policy) ValidateDestination(ctx context.Context, u *url.URL) error {
 	if p.hostAllowed(host) {
 		return nil
 	}
+	if p.targetAllowed(host, u.Port()) {
+		return nil
+	}
 	if addr, err := netip.ParseAddr(host); err == nil {
 		if p.addressAllowed(addr.Unmap()) {
 			return nil
@@ -169,7 +199,7 @@ func (p *Policy) DialContext(ctx context.Context, network, address string) (net.
 		return nil, ErrBlocked
 	}
 	normalized := normalizeHost(host)
-	allowedHost := p.hostAllowed(normalized)
+	allowedHost := p.hostAllowed(normalized) || p.targetAllowed(normalized, port)
 	addresses, err := p.resolve(ctx, normalized)
 	if err != nil {
 		return nil, fmt.Errorf("outbound resolve: %w", ErrBlocked)

@@ -59,6 +59,11 @@ type Dependencies struct {
 	ExchangeService  *exchange.Service
 	PluginService    *plugins.Service
 	OutboundClient   *http.Client
+	// OutboundPolicy is the policy behind OutboundClient. The process has one
+	// policy, not two: embedders that build their own client pass the policy it
+	// dials with, so a per-endpoint exception registered here (plugin model
+	// discovery) applies to the client that is actually used. nil = build one.
+	OutboundPolicy *outbound.Policy
 	// OutboundImageClient is the client for the image endpoints (longer
 	// response-header ceiling). nil = reuse OutboundClient.
 	OutboundImageClient *http.Client
@@ -104,14 +109,21 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	}
 	// Build the policy independently of the injected client so admin proxy
 	// validation remains available even in tests/embedders that provide their
-	// own HTTP client.
-	outboundPolicy, err := outbound.NewPolicy(outbound.Options{
-		AllowHosts:  cfg.OutboundAllowHosts,
-		AllowCIDRs:  cfg.OutboundAllowCIDRs,
-		DialTimeout: cfg.OutboundConnectTimeout,
-	})
-	if err != nil {
-		panic("httpapi: invalid outbound policy")
+	// own HTTP client. When the caller passes the policy its client dials with,
+	// use that object instead of a second one: an exception registered below
+	// (plugin endpoints, see Service.DialAllowed) must reach the client that
+	// actually performs model discovery.
+	outboundPolicy := dependencies.OutboundPolicy
+	if outboundPolicy == nil {
+		built, err := outbound.NewPolicy(outbound.Options{
+			AllowHosts:  cfg.OutboundAllowHosts,
+			AllowCIDRs:  cfg.OutboundAllowCIDRs,
+			DialTimeout: cfg.OutboundConnectTimeout,
+		})
+		if err != nil {
+			panic("httpapi: invalid outbound policy")
+		}
+		outboundPolicy = built
 	}
 	outboundClient := dependencies.OutboundClient
 	// The two clients are live: the outbound limits are runtime settings, so the
@@ -515,6 +527,13 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	// enabled to expose their Admin surfaces. Core audit/backup stay always-on.
 	pluginService := dependencies.PluginService
 	if pluginService != nil {
+		// Model discovery goes through the outbound SSRF policy, and a managed
+		// plugin listens on a loopback port the gateway assigns at run time.
+		// Allow exactly the endpoints of enabled plugins: the plugin's own
+		// process or the sidecar URL its operator registered. Nothing else
+		// becomes reachable, so "获取模型" works for a plugin while the policy
+		// still refuses arbitrary loopback and container addresses.
+		outboundPolicy.SetTargetAllowlist(pluginService.DialAllowed)
 		// Plugin intercept hooks: the plugin host implements
 		// proxy.Interceptor, so a plugin can take part in routing and
 		// request/response rewriting without internal/proxy importing any

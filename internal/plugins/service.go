@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -260,6 +261,11 @@ type Service struct {
 	hookHealth hookBreaker
 	// configs caches persisted plugin config JSON keyed by plugin id.
 	configs map[string]string
+	// targets holds the "host:port" endpoints of enabled plugins, so the
+	// outbound policy can reach them for model discovery without opening
+	// loopback or container networks generally. A managed plugin listens on a
+	// port the gateway assigns at run time, which no static CIDR list can name.
+	targets map[string]struct{}
 	// onChange listeners fire after enablement map reloads (Enable/Disable/Uninstall/Activate).
 	onChange []func(id string, enabled bool)
 	// catalogURL optionally loads additional official entries at Catalog() time.
@@ -1431,6 +1437,7 @@ func (s *Service) reloadEnabled() error {
 		}
 	}
 	ids := make(map[string]bool, len(records))
+	targets := make(map[string]struct{}, len(records))
 	seenPrefixes := make(map[string]struct{})
 	forwarders := make([]PrefixForwarder, 0)
 	for _, record := range records {
@@ -1444,6 +1451,11 @@ func (s *Service) reloadEnabled() error {
 		var manifest Manifest
 		if err := json.Unmarshal([]byte(record.MetaJSON), &manifest); err != nil || manifest.Sidecar == nil {
 			continue
+		}
+		// Record the endpoint before the api_prefix gate below: a plugin that
+		// only exposes /v1 (no prefix forwarder) still has to be reachable.
+		if target := dialTarget(manifest.Sidecar.URL); target != "" {
+			targets[target] = struct{}{}
 		}
 		prefix := normalizeAPIPrefix(manifest.Sidecar.APIPrefix)
 		if prefix == "" || validateAPIPrefix(prefix) != nil {
@@ -1460,12 +1472,49 @@ func (s *Service) reloadEnabled() error {
 	s.mu.Lock()
 	s.enabled = ids
 	s.configs = configs
+	s.targets = targets
 	s.prefixForwarders = forwarders
 	s.rebuildHookEntriesLocked(records, ids)
 	s.mu.Unlock()
 	return nil
 }
 
+// DialAllowed reports whether host:port is the endpoint of an enabled plugin,
+// either its managed process (a loopback port the gateway assigned at run time)
+// or a sidecar URL an operator registered. Model discovery runs through the
+// outbound SSRF policy, which refuses loopback and container-network addresses
+// by default; without this every plugin channel answered "transport" the moment
+// the gateway asked the plugin for its models — even though relay traffic to the
+// very same address was never gated.
+func (s *Service) DialAllowed(host, port string) bool {
+	if s == nil || host == "" || port == "" {
+		return false
+	}
+	s.mu.RLock()
+	_, ok := s.targets[net.JoinHostPort(strings.ToLower(host), port)]
+	s.mu.RUnlock()
+	return ok
+}
+
+// dialTarget normalizes a plugin URL to the host:port form DialAllowed matches.
+// Only the endpoint itself is recorded, so a plugin on loopback, on a container
+// network or on a public host is reachable and nothing else becomes so.
+func dialTarget(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || u.Hostname() == "" {
+		return ""
+	}
+	port := u.Port()
+	if port == "" {
+		switch strings.ToLower(u.Scheme) {
+		case "https":
+			port = "443"
+		default:
+			port = "80"
+		}
+	}
+	return net.JoinHostPort(strings.ToLower(u.Hostname()), port)
+}
 func (s *Service) notifyChange(id string, enabled bool) {
 	s.mu.RLock()
 	listeners := append([]func(string, bool){}, s.onChange...)
