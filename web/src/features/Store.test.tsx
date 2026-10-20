@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { I18nProvider } from "../i18n";
@@ -10,6 +10,19 @@ import { Store } from "./Store";
 const response = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
+const hosted = {
+  id: "opencode-host",
+  name: "订阅账号宿主",
+  version: "0.3.0",
+  kind: "addon",
+  source: "sidecar",
+  installed: true,
+  enabled: true,
+  can_toggle: true,
+  meta_json: JSON.stringify({
+    sidecar: { url: "http://127.0.0.1:9300", api_key: "plugin-key", channel_path: "/v1" },
+  }),
+};
 const jev = {
   id: "jev-router",
   name: "Jev auto routing",
@@ -28,7 +41,7 @@ function setup() {
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input), "http://localhost").pathname;
-      if (path === "/admin/plugins/status") return response([jev]);
+      if (path === "/admin/plugins/status") return response([jev, hosted]);
       if (path === "/admin/plugins/market")
         return response({
           sources: [{ id: "official", name: "ZiChuanLan", url: "https://example.com" }],
@@ -54,7 +67,22 @@ function setup() {
           ],
         });
       if (path === "/admin/plugins/hooks") return response({ hooks: [] });
-      if (path === "/admin/plugins") return response([]);
+      if (path === "/admin/discovery/models-preview")
+        return response({
+          adapter: "openai",
+          models: ["opencode-zen-free/big-pickle", "opencode-zen-free/deepseek-v4.1-flash-free"],
+        });
+      if (path === "/admin/connections")
+        return response({
+          channel: { id: 1 },
+          site: { id: 1 },
+          credential: { id: 1 },
+          adopted: [],
+        });
+      // The create-channel button is gated on the sidecar record, so the
+      // installed-plugin list has to carry the channel path too.
+      if (path === "/admin/plugins")
+        return response([{ id: "opencode-host", meta_json: hosted.meta_json }]);
       return response({ error: `unexpected ${path}` }, 500);
     }),
   );
@@ -126,5 +154,30 @@ describe("extension store market cards", () => {
     await screen.findByText("Inactive & installable");
     const inactive = moduleCard("Jev auto routing");
     expect(within(inactive).getByRole("button", { name: /Activate/ })).toBeInTheDocument();
+  });
+
+  // The plugin answers /v1/models with what its signed-in accounts serve, so a
+  // channel built from it must adopt that list instead of asking the operator
+  // to type model names.
+  it("creates the channel from the models the plugin reports", async () => {
+    setup();
+    await screen.findByText("订阅账号宿主");
+    // An enabled plugin lives in the active list (a row), not a market card.
+    const row = screen.getAllByText("订阅账号宿主")[0]?.closest(".plugin-row");
+    if (!row) throw new Error("the active plugin row is missing");
+    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: /Create channel/ }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Create$/ }));
+    const calls = () =>
+      (globalThis.fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls;
+    await waitFor(() =>
+      expect(calls().map((call) => String(call[0]))).toContain("/admin/connections"),
+    );
+    expect(calls().map((call) => String(call[0]))).toContain("/admin/discovery/models-preview");
+    const [, init] = calls().find((call) => String(call[0]) === "/admin/connections")!;
+    const body = JSON.parse(String(init.body)) as { models_csv: string };
+    expect(body.models_csv).toBe(
+      "opencode-zen-free/big-pickle,opencode-zen-free/deepseek-v4.1-flash-free",
+    );
   });
 });

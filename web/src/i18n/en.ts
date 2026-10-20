@@ -2501,7 +2501,10 @@ export const en: Dict = {
   "plugins.channelBase": "Base URL",
   "plugins.channelSite": "Site",
   "plugins.channelCredential": "Credential",
-  "plugins.channelModels": "Models (comma separated)",
+  "plugins.channelModelsAuto":
+    "Models are read from the plugin automatically (/v1/models) — nothing to type.",
+  "plugins.channelNoModels":
+    "The plugin returned no models. Sign in to a provider on the plugin page first.",
   "plugins.channelCreate": "Create",
   "plugins.channelFailed": "Failed to create channel",
   "store.orphanHint": "This record is not in the official catalog. You can only remove it.",

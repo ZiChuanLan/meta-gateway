@@ -713,20 +713,30 @@ function CreateChannelDialog({
 }) {
   const { t } = useI18n();
   const [name, setName] = useState(`${row.name} 渠道`);
-  const [models, setModels] = useState("");
   const [apiKey, setApiKey] = useState(defaults?.api_key ?? "");
   const [error, setError] = useState("");
   const baseUrl = `${defaults?.url ?? ""}${defaults?.channel_path ?? ""}`;
 
   const create = useAdminMutation({
-    mutationFn: () =>
-      service.createConnection({
+    mutationFn: async () => {
+      // The plugin answers /v1/models with exactly what its signed-in accounts
+      // serve, so ask it instead of making the operator type model names the
+      // gateway can already read.
+      const preview = await service.previewChannelModels({
+        base_url: baseUrl,
+        secret: apiKey.trim(),
+        type_hint: "openai-compatible",
+      });
+      const models = preview.models.join(",");
+      if (!models) throw new Error(t("plugins.channelNoModels"));
+      return service.createConnection({
         name: name.trim(),
         base_url: baseUrl,
         secret: apiKey.trim(),
         type_hint: "openai-compatible",
-        models_csv: models.trim(),
-      }),
+        models_csv: models,
+      });
+    },
     invalidateKeys: [["channel-overviews"], ["channels"], ["sites"], ["credentials"]],
     toastOnError: false,
     onSuccess: onClose,
@@ -766,16 +776,6 @@ function CreateChannelDialog({
           <input className="mono" value={baseUrl} readOnly spellCheck={false} />
         </label>
         <label className="field">
-          <span>{t("plugins.channelModels")}</span>
-          <input
-            className="mono"
-            value={models}
-            onChange={(e) => setModels(e.target.value)}
-            placeholder="gpt-4o,claude-3-5-sonnet"
-            spellCheck={false}
-          />
-        </label>
-        <label className="field">
           <span>{t("common.secret")}</span>
           <input
             type="password"
@@ -785,6 +785,9 @@ function CreateChannelDialog({
             onChange={(e) => setApiKey(e.target.value)}
           />
         </label>
+        <p className="muted" style={{ fontSize: 12 }}>
+          {t("plugins.channelModelsAuto")}
+        </p>
         {error ? (
           <p className="muted" style={{ fontSize: 12 }}>
             {error}
