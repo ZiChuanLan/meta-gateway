@@ -276,6 +276,36 @@ func TestLiveTraceStreamEndsWhenSubscriberOverflows(t *testing.T) {
 	}
 }
 
+// The console sends the request ID percent-encoded because it contains a slash
+// ("<container-id>/<request-id>") and must travel as one path segment. chi
+// matches on the raw path and returns the parameter still encoded, so the
+// handler has to unescape it before the registry lookup — without that, every
+// interrupt answered 404 "request not in flight" for a live request.
+func TestLiveTraceInterruptEncodedID(t *testing.T) {
+	registry := livetrace.New()
+	handler := newLiveTraceHandler(registry)
+	router := chi.NewRouter()
+	handler.Register(router)
+
+	const id = "8fc69b31c7e2/uKzlzuSlCk-000198"
+	ctx, release, ok := registry.Begin(context.Background(), id, "openai", "model", livetrace.BeginMeta{})
+	if !ok {
+		t.Fatal("Begin failed")
+	}
+	defer release()
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/relay/live/8fc69b31c7e2%2FuKzlzuSlCk-000198/interrupt", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("interrupt with encoded id status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("interrupt with encoded id did not cancel the request context")
+	}
+}
+
 func TestLiveTraceInterruptMissing(t *testing.T) {
 	registry := livetrace.New()
 	handler := newLiveTraceHandler(registry)

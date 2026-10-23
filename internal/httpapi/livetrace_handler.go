@@ -6,6 +6,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -95,6 +96,13 @@ func (h *liveTraceHandler) stream(w http.ResponseWriter, r *http.Request) {
 
 func (h *liveTraceHandler) interrupt(w http.ResponseWriter, r *http.Request) {
 	requestID := chi.URLParam(r, "request_id")
+	// The ID is "<container-id>/<request-id>" and travels as a single path
+	// segment, so clients percent-encode the slash (%2F). chi matches on
+	// URL.RawPath and hands the parameter back still encoded; unescape it or
+	// the registry lookup misses every in-flight request.
+	if unescaped, err := url.PathUnescape(requestID); err == nil {
+		requestID = unescaped
+	}
 	if requestID == "" {
 		writeError(w, http.StatusBadRequest, "request_id is required")
 		return
