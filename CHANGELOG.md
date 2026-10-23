@@ -4,6 +4,12 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v4.7.3] - 2026-10-24
+
+### Fixed
+
+- **控制台实时轨迹的「中断」按钮不再对所有请求返回 404。** 请求 ID 的格式是 `<容器 ID>/<请求 ID>`，作为单个路径段传输时 `/` 会被百分号编码成 `%2F`；chi 按 `URL.RawPath` 路由、并把路径参数原样交回，处理函数于是拿着编码后的字符串去查内存注册表——永远查不到，每个仍在飞行中的请求都得到 `404 request not in flight`。现在中断接口在查表前先 `url.PathUnescape` 还原（`internal/httpapi/livetrace_handler.go`），并补了一条走真实路由 + `%2F` 的回归测试：回滚修复即复现线上那条 404。
+
 ## [v4.7.2] - 2026-10-20
 
 ### Fixed
