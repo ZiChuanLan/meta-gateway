@@ -1098,6 +1098,7 @@ function ModelsWorkspace({
           channels={(channels.data ?? []).map((channel) => ({
             id: channel.id,
             name: channel.name,
+            models_csv: channel.models_csv,
           }))}
           groups={groupNames}
           pending={saveMember.isPending}

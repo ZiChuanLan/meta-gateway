@@ -149,4 +149,69 @@ describe("SearchableSelect custom entry", () => {
     });
     expect(seen.at(-1)).toBe("my-gateway");
   });
+
+  // Picking “Custom…” is a detour, not a commitment: without a way back the
+  // field stayed a free-text box until the dialog was reopened.
+  it("returns from custom entry to the list trigger", () => {
+    render(
+      <I18nProvider>
+        <Harness onChange={() => {}} />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "TypeSafe" }));
+    fireEvent.click(screen.getByText("Custom…"));
+    fireEvent.change(screen.getByPlaceholderText("custom-type-id"), {
+      target: { value: "my-gateway" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Back to list" }));
+    // The typed value survives as the selection, the list is one click away,
+    // and focus went back to the trigger instead of dropping to <body>.
+    const trigger = screen.getByRole("button", { name: "my-gateway" });
+    expect(trigger).toHaveFocus();
+    fireEvent.click(trigger);
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+  });
+
+  // A free-text field must not quietly swap a typed prefix for a full name.
+  it("commits what was typed when several rows merely match it", () => {
+    const seen: string[] = [];
+    render(
+      <I18nProvider>
+        <SearchableSelect
+          options={["gpt-4o", "gpt-4o-mini", "claude-3", "gemini-2", "o3"].map((label) => ({
+            label,
+            value: label,
+          }))}
+          value=""
+          onChange={(value) => seen.push(value)}
+          allowCustom
+          placeholder="Upstream"
+        />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Upstream" }));
+    const search = screen.getByRole("textbox", { name: "Upstream" });
+    fireEvent.change(search, { target: { value: "gpt-4" } });
+    fireEvent.keyDown(search, { key: "Enter" });
+    expect(seen.at(-1)).toBe("gpt-4");
+  });
+
+  // Empty Enter used to commit the first row, which for an alias field is
+  // "blank" — a stray keypress erased the stored target.
+  it("does not commit the blank row on Enter in an empty search", () => {
+    const seen: string[] = [];
+    render(
+      <I18nProvider>
+        <SearchableSelect
+          options={[{ value: "", label: "Blank" }, ...options]}
+          value=""
+          onChange={(value) => seen.push(value)}
+          placeholder="Upstream"
+        />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Blank" }));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Upstream" }), { key: "Enter" });
+    expect(seen).toEqual([]);
+  });
 });

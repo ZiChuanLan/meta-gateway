@@ -29,6 +29,8 @@ export function SearchableSelect({
   onChange,
   placeholder,
   allowCustom,
+  customLabel,
+  customPlaceholder,
   disabled,
   groups,
   ariaLabel,
@@ -39,6 +41,9 @@ export function SearchableSelect({
   placeholder?: string;
   /** When true, selecting the "custom" sentinel reveals a free-text input. */
   allowCustom?: boolean;
+  /** What that free-text escape hatch is called for this field. */
+  customLabel?: string;
+  customPlaceholder?: string;
   disabled?: boolean;
   /** Order of group ids to render, with a "*" for ungroupped options. */
   groups?: string[];
@@ -64,6 +69,11 @@ export function SearchableSelect({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  // Set when custom entry is left, so focus can go back to the trigger that
+  // just remounted — otherwise it falls to <body> and the keyboard user is
+  // lost. A flag (not an unconditional mount effect) keeps that hand-off from
+  // stealing focus on ordinary renders.
+  const returnFocusRef = useRef(false);
   // The panel is fixed-positioned so scroll containers (e.g. Dialog) cannot clip it.
   const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
 
@@ -112,6 +122,13 @@ export function SearchableSelect({
   useLayoutEffect(() => {
     if (open) placeRef.current();
   }, [open, query, options.length]);
+  // Leaving custom entry unmounts the input that had focus; hand it back to the
+  // trigger that replaced it. Gated on the flag so normal renders never steal.
+  useLayoutEffect(() => {
+    if (customMode || !returnFocusRef.current) return;
+    returnFocusRef.current = false;
+    triggerRef.current?.focus({ preventScroll: true });
+  }, [customMode]);
 
   const customSentinel = useMemo(
     () => options.find((option) => option.value === "__custom__"),
@@ -236,7 +253,9 @@ export function SearchableSelect({
   };
 
   const triggerValue = isCustom
-    ? value || customValue || placeholder || ""
+    ? // The marker itself is not a name: showing it here printed
+      // "__custom__" in the trigger whenever custom entry was left untyped.
+      (value === "__custom__" ? "" : value) || customValue || placeholder || ""
     : (selectedLabel ?? value);
 
   return (
@@ -265,17 +284,38 @@ export function SearchableSelect({
           <ChevronDown size={14} />
         </button>
       ) : (
-        <input
-          className="type-custom-input"
-          value={customValue}
-          onChange={(event) => {
-            setCustomValue(event.target.value);
-            onChange(event.target.value);
-          }}
-          placeholder="custom-type-id"
-          disabled={disabled}
-          autoFocus
-        />
+        <>
+          <input
+            className="type-custom-input"
+            value={customValue}
+            onChange={(event) => {
+              setCustomValue(event.target.value);
+              onChange(event.target.value);
+            }}
+            placeholder={customPlaceholder ?? "custom-type-id"}
+            disabled={disabled}
+            autoFocus
+          />
+          {/* Free text is a detour, not a one-way door: the typed value stays
+              until the operator picks from the list or clears the field.
+              Without this, an accidental click on the custom item stranded
+              the field until the whole form was reopened. */}
+          <button
+            type="button"
+            className="advanced-toggle"
+            disabled={disabled}
+            onClick={() => {
+              // Back to the trigger, keeping whatever was typed as the value;
+              // opening the list is the operator's next click.
+              returnFocusRef.current = true;
+              setCustomMode(false);
+              setCustomValue("");
+            }}
+          >
+            <ChevronDown size={12} />
+            {t("select.backToList")}
+          </button>
+        </>
       )}
       {open
         ? createPortal(
@@ -307,7 +347,25 @@ export function SearchableSelect({
                   next = options[options.length - 1];
                 else if (event.key === "Enter" && event.target === searchRef.current) {
                   event.preventDefault();
-                  options[0]?.click();
+                  const typed = query.trim();
+                  // Enter in an empty search box must not commit the first row:
+                  // for a free-text field that row is often the caller's "blank"
+                  // option, so a stray Enter cleared the value instead of keeping it.
+                  if (!typed) {
+                    setOpen(false);
+                    return;
+                  }
+                  const needle = typed.toLowerCase();
+                  // Exact match first, then the only filtered row, then what was
+                  // typed. Committing the first row blindly silently substituted a
+                  // prefix match for the typed name ("gpt-4" became "gpt-4o-mini").
+                  const match =
+                    filtered.find((option) => option.label.toLowerCase() === needle) ??
+                    filtered.find((option) => option.value.toLowerCase() === needle) ??
+                    (filtered.length === 1 ? filtered[0] : undefined);
+                  if (match) commit(match.value);
+                  else if (allowCustom) commit(typed);
+                  else setOpen(false);
                 }
                 if (next) {
                   event.preventDefault();
@@ -375,7 +433,7 @@ export function SearchableSelect({
                     className="searchable-select-item searchable-select-custom"
                     onClick={enterCustom}
                   >
-                    {customSentinel?.label ?? t("select.custom")}
+                    {customSentinel?.label ?? customLabel ?? t("select.custom")}
                     {query.trim() ? ": " + query.trim() : ""}
                   </button>
                 ) : null}

@@ -470,6 +470,7 @@ export const zh: Dict = {
   "modelsPage.tools": "模型工具",
   "select.search": "搜索选项…",
   "select.custom": "自定义类型",
+  "select.backToList": "返回列表选择",
   "select.noMatches": "没有匹配的选项",
   "shell.workspace": "你的 AI 服务空间",
   "motion.entrance": "进入工作空间",
@@ -2414,6 +2415,9 @@ export const zh: Dict = {
   "routing.enabledHint": "关闭后，该模型不会再走这条通道（配置仍保留）。",
   "routing.memberRealName": "上游模型名（别名目标）",
   "routing.memberRealNamePlaceholder": "留空则直接转发路由名",
+  "routing.memberRealNameSearch": "搜索或输入上游模型名",
+  "routing.memberRealNameBlank": "留空（直接转发路由名）",
+  "routing.memberRealNameCustom": "自定义模型名",
   "routing.memberRealNameHint":
     "填写后，走这条通道的请求会把模型名改写成这里填的名字。统一名称功能就是靠它让同一个别名在各渠道命中各自的真实模型。",
   "routing.protectedLabel": "独立优先级/权重",

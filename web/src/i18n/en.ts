@@ -512,6 +512,7 @@ export const en: Dict = {
   "modelsPage.tools": "Model tools",
   "select.search": "Search options…",
   "select.custom": "Custom type",
+  "select.backToList": "Back to list",
   "select.noMatches": "No matching options",
   "shell.workspace": "Your AI workspace",
   "motion.entrance": "Workspace entrance",
@@ -2620,6 +2621,9 @@ export const en: Dict = {
   "routing.enabledHint": "Off = skip this channel for this model (route still exists).",
   "routing.memberRealName": "Upstream model name (alias target)",
   "routing.memberRealNamePlaceholder": "Blank forwards the route name as-is",
+  "routing.memberRealNameSearch": "Search or type an upstream model",
+  "routing.memberRealNameBlank": "Blank (forward the route name)",
+  "routing.memberRealNameCustom": "Custom model name",
   "routing.memberRealNameHint":
     "When set, requests routed through this channel are rewritten to this name. This is what lets one alias hit each channel's own real model after unification.",
   "routing.protectedLabel": "Independent priority/weight",
