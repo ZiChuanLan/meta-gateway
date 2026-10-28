@@ -2553,6 +2553,7 @@ export const zh: Dict = {
   "ops.checkinCategory.credential_empty": "凭证密文为空",
   "ops.running": "运行中...",
   "ops.checkinSummary": "{success} 成功 · {failure} 失败 · {skipped} 跳过",
+  "ops.checkinRunDone": "签到完成：{success} 成功 · {failure} 失败 · {skipped} 跳过",
   "ops.checkinDetail": "结果说明",
   "ops.checkinCategory.checked_in": "签到成功",
   "ops.checkinCategory.already_checked_in": "今日已签到",

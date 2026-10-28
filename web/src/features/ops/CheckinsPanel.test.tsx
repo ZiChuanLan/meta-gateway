@@ -53,6 +53,9 @@ function setup(payload: Record<string, unknown>) {
       }
       if (path === "/admin/checkin/logs") return response([]);
       if (path === "/admin/sites") return response([]);
+      if (path === "/admin/checkin/run") {
+        return response({ items: [], success_count: 2, failure_count: 1, skipped_count: 0 });
+      }
       return response({ error: `unexpected ${path}` }, 500);
     }),
   );
@@ -125,5 +128,17 @@ describe("scheduled check-in panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存计划" }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]?.body).toMatchObject({ checkin_enabled: true, checkin_cron: "0 8 * * *" });
+  });
+
+  // A manual run's outcome must not be visible only in the result strip below
+  // the history table: the toast is what makes a failed count noticeable.
+  it("shows a failed manual run as an explicit error toast", async () => {
+    setup(settings({}));
+    await screen.findByText(/定时设置来源：环境变量/);
+    fireEvent.click(screen.getByRole("button", { name: "运行已启用项" }));
+    const confirmButtons = await screen.findAllByRole("button", { name: "运行已启用项" });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]!);
+    expect(await screen.findByText("签到完成：2 成功 · 1 失败 · 0 跳过")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("签到完成：2 成功 · 1 失败 · 0 跳过");
   });
 });

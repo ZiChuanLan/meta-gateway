@@ -3199,6 +3199,20 @@ td.actions {
   flex: 0 0 auto;
   min-width: 0;
 }
+/* A `.field` stretches every child to the column width, and system.css gives
+   `.field select` 100%. That is right for a single control, but this picker is
+   compound: two stretched selects plus the colon and hint overflow the column
+   long before the viewport is narrow. Keep the picker at its intrinsic width
+   and let it wrap instead of pushing the minute select out of the panel. */
+.field .checkin-time-picker {
+  align-self: flex-start;
+  width: fit-content;
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+.field .checkin-time-picker select {
+  width: auto;
+}
 .ua-preset-row {
   display: flex;
   gap: 8px;

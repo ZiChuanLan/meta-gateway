@@ -144,13 +144,27 @@ export function CheckinsPanel({ children }: { children?: React.ReactNode }) {
   }, [sites.data]);
   const run = useMutation({
     mutationFn: s.runAllCheckins,
-    onSuccess: () => {
+    onSuccess: (result) => {
       setConfirmRun(false);
       void qc.invalidateQueries({ queryKey: ["checkin-logs"] });
       void qc.invalidateQueries({ queryKey: ["credentials"] });
       void qc.invalidateQueries({ queryKey: ["channel-overviews"] });
+      // The result strip below the table is easy to miss — especially when the
+      // table is long. A toast makes a manual run's outcome explicit, and a
+      // failed count is surfaced as an error rather than a quiet summary.
+      toast.push({
+        tone: result.failure_count > 0 ? "error" : "success",
+        message: t("ops.checkinRunDone", {
+          success: result.success_count,
+          failure: result.failure_count,
+          skipped: result.skipped_count,
+        }),
+      });
     },
-    onError: () => setConfirmRun(false),
+    onError: (error) => {
+      setConfirmRun(false);
+      toast.pushError(error);
+    },
   });
   const checkinRows = logs.data ?? [];
   const checkinPagination = useClientPagination(checkinRows, 15);

@@ -2761,6 +2761,8 @@ export const en: Dict = {
     "This table is history. Many failures mean undecryptable secrets or non-session credentials — not that the Store add-on is broken.",
   "ops.running": "Running...",
   "ops.checkinSummary": "{success} succeeded · {failure} failed · {skipped} skipped",
+  "ops.checkinRunDone":
+    "Check-in finished: {success} succeeded · {failure} failed · {skipped} skipped",
   "ops.checkinDetail": "Result detail",
   "ops.checkinCategory.checked_in": "Checked in",
   "ops.checkinCategory.already_checked_in": "Already checked in today",
