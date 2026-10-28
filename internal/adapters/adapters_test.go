@@ -198,6 +198,7 @@ func TestOpenAIModelAdapterRejectsInvalidResponsesWithRedactedErrors(t *testing.
 		{name: "missing data", body: `{}`, code: 200, kind: adapters.ErrorPayload},
 		{name: "null data", body: `{"data":null}`, code: 200, kind: adapters.ErrorPayload},
 		{name: "invalid item", body: `{"data":[{"id":123}]}`, code: 200, kind: adapters.ErrorPayload},
+		{name: "flat list with no usable names", body: `{"models":["  ","\t"]}`, code: 200, kind: adapters.ErrorPayload},
 		{name: "too large", body: strings.Repeat("x", (2<<20)+1), code: 200, kind: adapters.ErrorTooLarge},
 	}
 	for _, tt := range tests {
@@ -248,6 +249,11 @@ func TestOpenAIModelAdapterAcceptsEveryModelListShape(t *testing.T) {
 		{
 			name: "flat name list",
 			body: `{"models":["a","b","a"]}`,
+			want: []string{"a", "b"},
+		},
+		{
+			name: "flat list drops blank names",
+			body: `{"models":["a","  ","b"]}`,
 			want: []string{"a", "b"},
 		},
 		{

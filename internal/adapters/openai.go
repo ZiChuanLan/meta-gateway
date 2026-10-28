@@ -157,6 +157,11 @@ func decodeModelItems(raw json.RawMessage) ([]string, bool) {
 				names = append(names, cleaned)
 			}
 		}
+		// Match the object-list branch: a nonempty list whose entries all fail
+		// to name a model is a broken payload, not an empty catalogue.
+		if len(flat) > 0 && len(names) == 0 {
+			return nil, false
+		}
 		return names, true
 	}
 	var items []struct {
