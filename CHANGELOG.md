@@ -4,6 +4,14 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v4.7.5] - 2026-10-29
+
+### Fixed
+
+- **模型清单里全是空名时不再被当成空目录。** 扁平的 `models: [""]` 会被过滤成空切片并按成功返回，而对象形态遇到同样的情况却报 `invalid_payload`；现在两种形态一致拒绝，空白名字不再伪装成「这个渠道没有模型」。
+- **签到页的时间选择器不再把分钟下拉框挤出面板。** `.field` 会把子元素拉满列宽，`.field select` 又是 `width: 100%`，两个下拉框一起被撑宽。选择器改为按内容宽度布局并允许换行，760px 与 320px 宽度下都不再横向溢出。
+- **手动签到会明确通知结果。** 点「运行已启用项」后弹出 toast，存在失败时用 error 样式给出失败数量，不再只依赖表格下方的结果条。
+
 ## [v4.7.4] - 2026-10-27
 
 ### Added
