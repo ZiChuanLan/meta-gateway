@@ -84,6 +84,7 @@ export const SECTIONS: DocSection[] = [
 				items: [
 					{ text: '概览', link: '/upstream/' },
 					{ text: '基础 URL 与端点规则', link: '/upstream/base-url-rules' },
+					{ text: '验证 OpenAI 兼容上游', link: '/upstream/compatibility-check' },
 					{ text: '自定义端点映射', link: '/upstream/endpoint-mapping' },
 					{ text: '站点探针', link: '/upstream/site-probe' },
 				],
