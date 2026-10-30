@@ -4,6 +4,16 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v4.7.6] - 2026-10-30
+
+### Added
+
+- **新增「验证 OpenAI 兼容上游」文档页。** 覆盖最小配置、下游令牌与上游密钥的区别、普通对话 / 流式 / 工具调用 / 工具结果续接、受控故障转移与错误透传的检查清单，以及不消耗真实额度的本地回归命令；示例全部是占位值，不把某个端点写成已验证或背书。
+
+### Tests
+
+- **OpenAI 兼容链路补上端到端契约测试。** `TestOpenAICompatibleHTTPRoundTrip` / `TestOpenAICompatibleHTTPFailover` 走真实的代理路由与本地 `httptest` 上游，断言请求语义不被改写、流式工具分片与末尾 usage 原样通过、工具结果续接，以及 401 / 429 / 503 下开关故障转移时的状态码、错误体和备用渠道凭据隔离。
+
 ## [v4.7.5] - 2026-10-29
 
 ### Fixed
