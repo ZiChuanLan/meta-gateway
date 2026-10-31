@@ -62,7 +62,7 @@ func TestUpdateJournalRecognizesTheTargetBuild(t *testing.T) {
 func TestTargetReached(t *testing.T) {
 	cases := []struct {
 		target, current string
-		want           bool
+		want            bool
 	}{
 		{"v4.7.6", "v4.7.6", true},
 		// The journal names an older release than the one now running: a manual
