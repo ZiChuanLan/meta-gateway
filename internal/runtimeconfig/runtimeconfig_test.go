@@ -10,6 +10,7 @@ import (
 
 	"github.com/lan/meta-gateway/internal/checkin"
 	"github.com/lan/meta-gateway/internal/config"
+	"github.com/lan/meta-gateway/internal/proxy"
 	"github.com/lan/meta-gateway/internal/store"
 )
 
@@ -203,6 +204,100 @@ func TestUpdateRollsBackDurableAndRuntimeStateWhenApplyFails(t *testing.T) {
 	}
 	if len(applied) != 3 || applied[0] != "" || applied[1] != "http://reject.example" || applied[2] != "" {
 		t.Fatalf("unexpected apply/rollback sequence: %#v", applied)
+	}
+}
+
+// The image escape hatch is the one setting where a console save decides
+// whether a billable generation may be sent twice, so "saved" must mean
+// "reached the proxy" — not merely "written to the row" — and clearing the
+// override must hand it back to the deployment default.
+func TestImagesFailoverHotReloadsIntoProxy(t *testing.T) {
+	db, err := store.OpenTest(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	cfg := &config.Config{
+		HTTPAddr:                    ":4100",
+		DataDir:                     "./data",
+		RetryTimes:                  2,
+		CrossChannelFailoverEnabled: true,
+		Cooldown:                    30 * time.Second,
+		CheckinCron:                 "0 8 * * *",
+		StableFirstDenominator:      25,
+		StableFirstPromoteRequests:  100,
+		RoutingConcurrencyLimit:     64,
+		WebhookThrottleSeconds:      300,
+		ImagesFailoverEnabled:       false,
+	}
+	service := proxy.New(nil, nil, nil, nil, 2, 30*time.Second)
+	controller := New(cfg, db.RuntimeSettings, Appliers{Proxy: service})
+	if err := controller.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	if service.ImagesFailoverEnabled() {
+		t.Fatal("image failover must start off")
+	}
+
+	next := controller.Snapshot().Editable
+	next.ImagesFailoverEnabled = true
+	snapshot, err := controller.Update(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.Editable.ImagesFailoverEnabled || !service.ImagesFailoverEnabled() {
+		t.Fatalf("images failover not applied: editable=%v proxy=%v",
+			snapshot.Editable.ImagesFailoverEnabled, service.ImagesFailoverEnabled())
+	}
+	persisted, err := db.RuntimeSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.ImagesFailoverEnabled != 1 {
+		t.Fatalf("images_failover_enabled = %d, want 1", persisted.ImagesFailoverEnabled)
+	}
+
+	// The warned tier has to travel the same path, and it is stored separately:
+	// one checkbox turning the hatch on must not silently arm the other tier.
+	if service.ImagesFailoverIncludeAmbiguous() {
+		t.Fatal("the warned tier must stay off until it is explicitly enabled")
+	}
+	next = snapshot.Editable
+	next.ImagesFailoverIncludeAmbiguous = true
+	snapshot, err = controller.Update(next)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !service.ImagesFailoverIncludeAmbiguous() {
+		t.Fatal("the warned tier was saved but never reached the proxy")
+	}
+	persisted, err = db.RuntimeSettings.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.ImagesFailoverIncludeAmbiguous != 1 {
+		t.Fatalf("images_failover_include_ambiguous = %d, want 1", persisted.ImagesFailoverIncludeAmbiguous)
+	}
+
+	// A fresh controller over the same row is what a container restart looks
+	// like: the override must survive, and clearing it must return to env.
+	restarted := New(cfg, db.RuntimeSettings, Appliers{Proxy: proxy.New(nil, nil, nil, nil, 2, 0)})
+	if err := restarted.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	if !restarted.Snapshot().Editable.ImagesFailoverEnabled ||
+		!restarted.Snapshot().Editable.ImagesFailoverIncludeAmbiguous {
+		t.Fatal("stored image-failover overrides did not survive a restart")
+	}
+	cleared, err := restarted.ClearOverride()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared.Editable.ImagesFailoverEnabled || restarted.appliers.Proxy.ImagesFailoverEnabled() {
+		t.Fatal("clearing the override must restore the env default (off)")
+	}
+	if cleared.Editable.ImagesFailoverIncludeAmbiguous || restarted.appliers.Proxy.ImagesFailoverIncludeAmbiguous() {
+		t.Fatal("clearing the override must disarm the warned tier too")
 	}
 }
 

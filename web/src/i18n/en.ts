@@ -2050,7 +2050,13 @@ export const en: Dict = {
     "Issue downstream tokens for /v1 clients. Plaintext is stored encrypted and can be re-viewed or rotated anytime.",
   "logsPage.kicker": "Observability",
   "logsPage.detailKicker": "Proxy attempt",
-  "logsPage.retried": "Retried",
+  "logsPage.failoverHops": "{n} attempts",
+  "logsPage.failoverTitle": "Failover chain",
+  "logsPage.failoverCount": "{n} hops",
+  "logsPage.failoverHop": "attempt {n}",
+  "logsPage.failoverFinal": "final",
+  "logsPage.failoverTruncated":
+    "More attempts than the display cap; middle hops omitted. The raw per-attempt rows are still kept, keyed by request id.",
   "logsPage.slowOnly": "Slow only (≥5s)",
   "logsPage.timeWindow": "Time range",
   "logsPage.memberDescription": "Your requests, token usage, costs and client details.",
@@ -3109,6 +3115,19 @@ export const en: Dict = {
   "ops.runtime.channelRetryTimes": "Same-key re-sends",
   "ops.runtime.channelRetryTimesHint":
     "How many times a retryable request is re-sent on the same upstream key before moving to the next key and then the next channel (0 = no re-send). Network jitter is retried without cooldown or failure penalties.",
+  "ops.runtime.imagesFailover": "Fail over image requests",
+  "ops.runtime.imagesFailoverHint":
+    "Off by default. When on, a failed image generation is retried on the next key and then the next channel; the base scope replays only failures that provably preceded generation (429/503/529/530 and outright 4xx). How far the replay set reaches — 5xx, timeouts — is chosen in the dialog when you turn it on. Env: IMAGES_FAILOVER_ENABLED.",
+  "ops.runtime.imagesFailoverDialogTitle": "Turn on “fail over image requests”?",
+  "ops.runtime.imagesFailoverDialogIntro":
+    "When on, a failed image generation is retried on the next key and then the next channel. The base scope replays only failures that provably preceded generation (429/503/529/530 and outright 4xx) — retrying those costs nothing extra. The options below widen the replay set; each step raises the double-billing risk, because a generation may already have been accepted and billed upstream, and images carry no usage receipt to reconcile afterwards.",
+  "ops.runtime.imagesFailoverArmAmbiguous": "Also retry 5xx",
+  "ops.runtime.imagesFailoverArmAmbiguousNote":
+    "A 500/502 also moves to another key and another channel. Those errors can mean the picture was already generated — and billed — and only the response failed, so a retry may charge twice for one image.",
+  "ops.runtime.imagesFailoverArmUncertain": "Retry 504, timeouts and broken streams too",
+  "ops.runtime.imagesFailoverArmUncertainNote":
+    "Puts 504, transport timeouts, dead streams and empty responses into the replay set, and keeps trying until a picture comes back. These are exactly the cases where the picture most likely already exists, so this carries the highest double-billing risk — use it when a picture matters more than the bill.",
+  "ops.runtime.imagesFailoverArm": "Turn on with the selected scope",
   "ops.runtime.cooldown": "Fixed cooldown",
   "ops.runtime.cooldownHint":
     "Fixed pause after a retryable upstream status such as 429/5xx. Transport jitter is not cooled or counted. Env: COOLDOWN_SECONDS.",

@@ -659,6 +659,11 @@ curl -s -H "Authorization: Bearer <session_token>" \
 列表接口会附带解析出的 `upstream_key_name`）、`key_fingerprint`（同一把上游密钥的 sha256
 前缀，密钥本体从不落库）——控制台日志行的展开区就是据此拼出的链路，排查时可直接按这些字段筛。
 
+**一条请求一行**：每次上游尝试仍各写一行原始 `proxy_logs`（审计/健康/计费依据），但除最后一次外都会被
+`merged_into` 指向该请求的最终行；列表、失败率、延迟直方图都只算「未合并」的行，故障转移链路
+（`attempts[]`）在列表响应里按尝试顺序附带。全文检索横跨整条链路（FTS 与 LIKE 兜底一致）。
+改日志相关代码时不要破坏这个口径：给列表加筛选时想清楚它过滤的是请求还是尝试。
+
 排查"上游报错"类问题时，先看 `proxy_logs` 里的 upstream status 与 body ——
 本项目是透明网关，**多数"网关的 bug"其实是上游协议不匹配**（例如某上游的 `/v1/images/edits`
 只收 JSON、multipart 直接 415）。

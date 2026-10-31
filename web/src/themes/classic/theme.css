@@ -6503,18 +6503,6 @@
 :root[data-appearance="classic"] .member-clear-health:hover {
   background: color-mix(in srgb, var(--danger, #d3544c) 10%, var(--surface));
 }
-:root[data-appearance="classic"] .log-retry-mark {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--warning, #e6a23c) 18%, transparent);
-  color: var(--warning, #e6a23c);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  vertical-align: middle;
-}
 :root[data-appearance="classic"] .log-error-label {
   display: inline-block;
   margin-left: 6px;

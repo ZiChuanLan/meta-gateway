@@ -61,6 +61,18 @@ type RuntimeSettingsRow struct {
 	// ChannelRetryTimes: how many times the same upstream key is re-sent after
 	// a retryable failure before moving to the next key/channel. -1 = env.
 	ChannelRetryTimes int
+	// ImagesFailoverEnabled is the opt-in escape hatch for image writes: replay
+	// only the failures that provably preceded generation (429/503/529/530 and
+	// outright request rejections), never 5xx/504/timeouts. -1 = env.
+	ImagesFailoverEnabled int
+	// ImagesFailoverIncludeAmbiguous widens that hatch to 5xx answers other than
+	// 504, which may arrive after the picture was generated and billed.
+	// -1 = env.
+	ImagesFailoverIncludeAmbiguous int
+	// ImagesFailoverIncludeUncertain widens it further to 504, transport
+	// timeouts, dead streams and empty 2xx: the cases where the picture most
+	// likely exists and a replay most likely bills twice. -1 = env.
+	ImagesFailoverIncludeUncertain int
 	// KeyPoolRotation: rotate through the site key pool on failure. -1 = env.
 	KeyPoolRotation int
 	// UpdateCheckEnabled gates the GitHub release update check. -1 = env.
@@ -143,6 +155,9 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		       health_sweep_enabled, health_sweep_interval_seconds, health_sweep_jitter_seconds,
 		       health_sweep_degraded_ms, health_sweep_concurrency, health_sweep_timeout_seconds,
 		       channel_retry_times,
+		       images_failover_enabled,
+		       images_failover_include_ambiguous,
+		       images_failover_include_uncertain,
 		       key_pool_rotation,
 		       update_check_enabled,
 		       default_model_sync_mode,
@@ -174,6 +189,9 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		alertSweep, alertDaily                                                             sql.NullInt64
 		hsEnabled, hsInterval, hsJitter, hsDegraded, hsConcurrency, hsTimeout              sql.NullInt64
 		channelRetry                                                                       sql.NullInt64
+		imagesFailover                                                                     sql.NullInt64
+		imagesFailoverAmbiguous                                                            sql.NullInt64
+		imagesFailoverUncertain                                                            sql.NullInt64
 		keyPoolRotation, updateCheck                                                       sql.NullInt64
 		defaultSyncMode                                                                    sql.NullString
 		probeCron, probePrompt                                                             sql.NullString
@@ -198,7 +216,7 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 		&stickyEnabled, &stickyTTL,
 		&alertConfigJSON, &alertSweep, &alertDaily,
 		&hsEnabled, &hsInterval, &hsJitter, &hsDegraded, &hsConcurrency, &hsTimeout,
-		&channelRetry, &keyPoolRotation, &updateCheck,
+		&channelRetry, &imagesFailover, &imagesFailoverAmbiguous, &imagesFailoverUncertain, &keyPoolRotation, &updateCheck,
 		&defaultSyncMode,
 		&probeCron, &probePrompt, &probeMaxTokens, &probeConcurrency, &probeAutoDisable,
 		&probeChannels, &probeModels,
@@ -381,6 +399,21 @@ func (s *RuntimeSettingsStore) Get() (*RuntimeSettingsRow, error) {
 	} else {
 		out.ChannelRetryTimes = -1
 	}
+	if imagesFailover.Valid {
+		out.ImagesFailoverEnabled = int(imagesFailover.Int64)
+	} else {
+		out.ImagesFailoverEnabled = -1
+	}
+	if imagesFailoverAmbiguous.Valid {
+		out.ImagesFailoverIncludeAmbiguous = int(imagesFailoverAmbiguous.Int64)
+	} else {
+		out.ImagesFailoverIncludeAmbiguous = -1
+	}
+	if imagesFailoverUncertain.Valid {
+		out.ImagesFailoverIncludeUncertain = int(imagesFailoverUncertain.Int64)
+	} else {
+		out.ImagesFailoverIncludeUncertain = -1
+	}
 	if keyPoolRotation.Valid {
 		out.KeyPoolRotation = int(keyPoolRotation.Int64)
 	} else {
@@ -516,6 +549,9 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			health_sweep_enabled, health_sweep_interval_seconds, health_sweep_jitter_seconds,
 			health_sweep_degraded_ms, health_sweep_concurrency, health_sweep_timeout_seconds,
 			channel_retry_times,
+			images_failover_enabled,
+			images_failover_include_ambiguous,
+			images_failover_include_uncertain,
 			key_pool_rotation,
 			update_check_enabled,
 			default_model_sync_mode,
@@ -545,6 +581,9 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			?, ?, ?,
 			?, ?, ?,
 			?, ?, ?,
+			?,
+			?,
+			?,
 			?,
 			?,
 			?,
@@ -598,6 +637,9 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 			health_sweep_concurrency = excluded.health_sweep_concurrency,
 			health_sweep_timeout_seconds = excluded.health_sweep_timeout_seconds,
 			channel_retry_times = excluded.channel_retry_times,
+			images_failover_enabled = excluded.images_failover_enabled,
+			images_failover_include_ambiguous = excluded.images_failover_include_ambiguous,
+			images_failover_include_uncertain = excluded.images_failover_include_uncertain,
 			key_pool_rotation = excluded.key_pool_rotation,
 			update_check_enabled = excluded.update_check_enabled,
 			default_model_sync_mode = excluded.default_model_sync_mode,
@@ -663,6 +705,9 @@ func (s *RuntimeSettingsStore) Save(settings *RuntimeSettingsRow) error {
 		settings.HealthSweepConcurrency,
 		settings.HealthSweepTimeoutSeconds,
 		settings.ChannelRetryTimes,
+		settings.ImagesFailoverEnabled,
+		settings.ImagesFailoverIncludeAmbiguous,
+		settings.ImagesFailoverIncludeUncertain,
 		settings.KeyPoolRotation,
 		settings.UpdateCheckEnabled,
 		settings.DefaultModelSyncMode,

@@ -91,6 +91,20 @@ services:
       RETRY_TIMES: "${RETRY_TIMES:-2}"
       CHANNEL_RETRY_TIMES: "${CHANNEL_RETRY_TIMES:-1}"
       CROSS_CHANNEL_FAILOVER_ENABLED: "${CROSS_CHANNEL_FAILOVER_ENABLED:-true}"
+      # Opt-in image failover. Off by default: an image is billed on acceptance
+      # and cannot be de-duplicated across keys/channels, so the shipped rule is
+      # one attempt. Turning it on replays only rejections that happened before
+      # the upstream generated anything (429/503/529/530 and 4xx) — never 5xx,
+      # 504 or a timeout.
+      IMAGES_FAILOVER_ENABLED: "${IMAGES_FAILOVER_ENABLED:-false}"
+      # Warned tier: with the switch above on, also replay 5xx other than 504.
+      # Those may arrive after the picture was generated and billed, so this
+      # trades a possible second charge for a retry.
+      IMAGES_FAILOVER_INCLUDE_AMBIGUOUS: "${IMAGES_FAILOVER_INCLUDE_AMBIGUOUS:-false}"
+      # Blunt tier: also replay 504, timeouts, dead streams and empty 2xx, i.e.
+      # every case where the picture may already exist. It can bill one image
+      # twice and there is no usage receipt to reconcile afterwards.
+      IMAGES_FAILOVER_INCLUDE_UNCERTAIN: "${IMAGES_FAILOVER_INCLUDE_UNCERTAIN:-false}"
       COOLDOWN_SECONDS: "${COOLDOWN_SECONDS:-30}"
       FAULT_PROTECTION_ENABLED: "${FAULT_PROTECTION_ENABLED:-true}"
       STICKY_ENABLED: "${STICKY_ENABLED:-false}"

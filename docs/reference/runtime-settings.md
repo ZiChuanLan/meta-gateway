@@ -7,7 +7,7 @@
 「字段」列是 Go 结构体字段名，用于在代码里定位该设置；「键」列是持久化与 API 使用的名字。
 没有出现在这张表里的开关只存在于环境变量层——想彻底关掉某个后台任务，两处都要看。
 
-共 **62** 个运行设置键。
+共 **65** 个运行设置键。
 
 | 键 | 字段 | 类型 | 说明 |
 | --- | --- | --- | --- |
@@ -57,6 +57,9 @@
 | `health_sweep_concurrency` | HealthSweepConcurrency | int | — |
 | `health_sweep_timeout_seconds` | HealthSweepTimeoutSeconds | int | — |
 | `channel_retry_times` | ChannelRetryTimes | int | ChannelRetryTimes is how many times the same upstream key is re-sent after a retryable failure before moving to the next key/channel (0-5). |
+| `images_failover_enabled` | ImagesFailoverEnabled | bool | ImagesFailoverEnabled lets an image write (images/edits, images/generations, variations) fail over. Off is the shipped contract: a billable generation must never be replayed. On, only the failures that provably preceded generation (429/503/529/530 and outright request rejections) are replayed; 5xx, 504 and timeouts still stop after one try. |
+| `images_failover_include_ambiguous` | ImagesFailoverIncludeAmbiguous | bool | ImagesFailoverIncludeAmbiguous is the warned tier of that hatch: also replay 5xx answers other than 504, which may arrive after the picture was generated and billed. Inert unless ImagesFailoverEnabled is on. |
+| `images_failover_include_uncertain` | ImagesFailoverIncludeUncertain | bool | ImagesFailoverIncludeUncertain is the blunt tier: also replay 504, transport timeouts, dead streams and empty 2xx, i.e. every failure where the upstream may already hold a finished picture and a charge. Inert unless ImagesFailoverEnabled is on. |
 | `update_check_enabled` | UpdateCheckEnabled | bool | UpdateCheckEnabled lets the gateway query GitHub for a newer release to power the console update badge. Off means no outbound calls at all. |
 | `default_model_sync_mode` | DefaultModelSyncMode | string | DefaultModelSyncMode is the sync mode ("auto"\|"manual") new channels get when the create request omits model_sync_mode. Existing channels keep their own mode. |
 | `site_probe_interval_seconds` | SiteProbeIntervalSeconds | int | SiteProbeIntervalSeconds / SiteProbeJitterSeconds drive the external site-probe collection loop. The cadence has to be configurable because sites publish their own probe data at wildly different rates: a status page that polls every 60s is useless at the 15-minute default, while one that polls every 15 minutes gains nothing from a faster round. |

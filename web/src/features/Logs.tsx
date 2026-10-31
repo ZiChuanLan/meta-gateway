@@ -4,7 +4,7 @@ import { Fragment, useMemo, useEffect, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AuditPanel, DiscoveryPanel } from "./ops";
 import { api } from "../api/client";
-import type { BillingEvidence, BillingExplanation, ProxyLog } from "../api/types";
+import type { BillingEvidence, BillingExplanation, ProxyLog, ProxyLogAttempt } from "../api/types";
 import { EmptyHero } from "../components/EmptyHero";
 import { ListShell } from "../components/ListShell";
 import { PaginationBar } from "../components/PaginationBar";
@@ -318,6 +318,115 @@ function LogChain({
           </Fragment>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Compact per-hop trail for a row that was retried: rendered under the channel
+ * so the list answers "which channel/model did we try, in what order, and did
+ * each one fail" without expanding the row. The row's channel cell keeps the
+ * final hop; the trail covers the walk that got there.
+ */
+function FailoverTrail({
+  attempts,
+  channelName,
+}: {
+  attempts: ProxyLogAttempt[];
+  channelName: Map<number, string>;
+}) {
+  const { t } = useI18n();
+  const summary = attempts
+    .map((hop) => {
+      const label = channelName.get(hop.channel_id) ?? `#${hop.channel_id}`;
+      return hop.status >= 400 ? `${label} ${hop.status}` : label;
+    })
+    .join(" → ");
+  return (
+    <span className="log-failover" title={summary}>
+      <span className="log-failover-count">
+        {t("logsPage.failoverHops", { n: attempts.length })}
+      </span>
+      {attempts.map((hop, index) => {
+        const label = channelName.get(hop.channel_id) ?? `#${hop.channel_id}`;
+        return (
+          <Fragment key={hop.log_id}>
+            {index > 0 ? (
+              <span className="log-failover-arrow" aria-hidden="true">
+                →
+              </span>
+            ) : null}
+            <span
+              className={`log-failover-hop${hop.status >= 400 ? " is-bad" : " is-ok"}`}
+              title={hop.error_detail || hop.error_brief || undefined}
+            >
+              <span className="log-failover-channel">{label}</span>
+              {hop.status >= 400 ? <span className="log-failover-code">{hop.status}</span> : null}
+            </span>
+          </Fragment>
+        );
+      })}
+    </span>
+  );
+}
+
+/**
+ * The expanded version of the trail: every hop in walk order with the error it
+ * actually returned. This is the "one log record" requirement's substance — the
+ * row above only names the stops, and debugging needs what each stop said.
+ */
+function FailoverDetail({
+  attempts,
+  truncated,
+  channelName,
+}: {
+  attempts: ProxyLogAttempt[];
+  truncated?: boolean;
+  channelName: Map<number, string>;
+}) {
+  const { t } = useI18n();
+  return (
+    <div className="log-failover-detail">
+      <div className="log-error-detail-head">
+        <strong>{t("logsPage.failoverTitle")}</strong>
+        <code>{t("logsPage.failoverCount", { n: attempts.length })}</code>
+      </div>
+      <ol className="log-failover-list">
+        {attempts.map((hop, index) => {
+          const label = channelName.get(hop.channel_id) ?? `#${hop.channel_id}`;
+          const failed = hop.status >= 400;
+          return (
+            <li key={hop.log_id} className={failed ? "is-bad" : "is-ok"}>
+              <div className="log-failover-hop-head">
+                <span className="log-failover-index">
+                  {t("logsPage.failoverHop", { n: index + 1 })}
+                </span>
+                <Link to={`/channels?id=${hop.channel_id}`}>{label}</Link>
+                {hop.upstream_model && hop.upstream_model !== hop.model ? (
+                  <code className="log-failover-model">{hop.upstream_model}</code>
+                ) : null}
+                <StatusBadge value={failed ? "failed" : String(hop.status)} />
+                {hop.final ? (
+                  <span className="log-failover-final">{t("logsPage.failoverFinal")}</span>
+                ) : null}
+                <span className="log-failover-latency">
+                  {t("common.ms", { n: hop.latency_ms })}
+                </span>
+              </div>
+              {hop.error_detail ? (
+                <pre className="log-failover-error">{hop.error_detail}</pre>
+              ) : hop.error_brief ? (
+                <code className="log-failover-error-brief">
+                  {t(`logsPage.errorClass.${categorizeError(hop.error_brief).class}`)}
+                </code>
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+      {truncated ? (
+        <small className="log-failover-truncated">{t("logsPage.failoverTruncated")}</small>
+      ) : null}
     </div>
   );
 }
@@ -685,18 +794,6 @@ export function LogsView({
   const pageRows = pagination.pageItems;
   const failedCount = visibleRows.filter((log) => log.status >= 400).length;
 
-  // Rows are newest-first; a row was retried when a newer row of the same
-  // request carries a higher attempt number.
-  const retriedRowIds = new Set<number>();
-  const maxAttemptByRequest = new Map<string, number>();
-  for (const log of rows) {
-    const seen = maxAttemptByRequest.get(log.request_id);
-    if (seen !== undefined && seen > log.attempt) retriedRowIds.add(log.id);
-    if ((seen ?? 0) < log.attempt) {
-      maxAttemptByRequest.set(log.request_id, log.attempt);
-    }
-  }
-
   // Friendly, translatable label for a raw backend error category.
   const errorLabel = (raw?: string): string => {
     if (!raw) return "—";
@@ -778,7 +875,23 @@ export function LogsView({
       clientLabel(log),
       ...(caps.upstream ? [log.upstream_request_id ?? ""] : []),
       log.request_id,
-      ...(caps.upstream ? [log.error_detail ?? log.error_brief ?? ""] : []),
+      ...(caps.upstream
+        ? [
+            // Export the whole walk when there was one: a CSV row that only
+            // carries the final error hides exactly what the reader is looking
+            // for after a failover.
+            (log.attempts?.length ?? 0) > 1
+              ? log
+                  .attempts!.map(
+                    (hop) =>
+                      `${channelName.get(hop.channel_id) ?? `#${hop.channel_id}`} ${hop.status}${
+                        hop.error_brief ? ` (${hop.error_brief})` : ""
+                      }`,
+                  )
+                  .join(" → ")
+              : (log.error_detail ?? log.error_brief ?? ""),
+          ]
+        : []),
     ]);
     downloadText(timestampedName("meta-gateway-logs", "csv"), toCSV([header, ...body]));
   };
@@ -1274,6 +1387,12 @@ export function LogsView({
                                 {log.upstream_url}
                               </small>
                             ) : null}
+                            {/* The whole walk, compactly: a failed-over request used to
+												    appear once per channel and the operator had to stitch the
+												    order together from request ids. One row, one trail. */}
+                            {caps.upstream && (log.attempts?.length ?? 0) > 1 ? (
+                              <FailoverTrail attempts={log.attempts!} channelName={channelName} />
+                            ) : null}
                           </td>
                         ) : null}
                         <td className="log-status-cell">
@@ -1288,11 +1407,6 @@ export function LogsView({
                             {log.error_brief ? (
                               <span className="log-error-label" title={log.error_brief}>
                                 {errorLabel(log.error_brief)}
-                              </span>
-                            ) : null}
-                            {retriedRowIds.has(log.id) ? (
-                              <span className="log-retry-mark" title={t("logsPage.retried")}>
-                                {t("logsPage.retried")}
                               </span>
                             ) : null}
                           </span>
@@ -1349,6 +1463,17 @@ export function LogsView({
                         <tr className="log-decision-row">
                           <td colSpan={caps.upstream ? 12 : caps.pricing ? 11 : 10}>
                             <div className="log-expand">
+                              {/* The failover walk first: when a request was retried across
+													    channels, "what happened" is a sequence, and the per-hop
+													    errors are the evidence. The lineage below then describes
+													    the hop that finally answered. */}
+                              {caps.upstream && (log.attempts?.length ?? 0) > 1 ? (
+                                <FailoverDetail
+                                  attempts={log.attempts!}
+                                  truncated={log.attempts_truncated}
+                                  channelName={channelName}
+                                />
+                              ) : null}
                               {/* Where the request came from and where it went, before the
 													    forensics: "who called, through what" is what an
 													    operator asks first about a row they do not recognise. */}

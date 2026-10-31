@@ -26,9 +26,14 @@ export default defineConfig({
   server: {
     port: 4173,
     proxy: {
-      "/admin/": "http://127.0.0.1:4100",
-      "/healthz": "http://127.0.0.1:4100",
-      "/readyz": "http://127.0.0.1:4100",
+      // Keep the browser's Host header through the proxy (changeOrigin: false
+      // is the point of spelling these out). The backend's CSRF check requires
+      // Origin host == Host, and http-proxy rewrites Host to the target by
+      // default, which turned every login from the dev server into a 403
+      // csrf_failed.
+      "/admin/": { target: "http://127.0.0.1:4100", changeOrigin: false },
+      "/healthz": { target: "http://127.0.0.1:4100", changeOrigin: false },
+      "/readyz": { target: "http://127.0.0.1:4100", changeOrigin: false },
     },
   },
   test: {

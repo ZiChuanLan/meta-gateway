@@ -15,7 +15,7 @@ hero:
 
 features:
   - title: 透明 pass-through
-    details: 不改写请求语义、不注入提示词、不伪造响应。图像等非幂等端点按字节原样转发，且不做故障转移重试。
+    details: 不改写请求语义、不注入提示词、不伪造响应。图像等非幂等端点按字节原样转发，默认不做故障转移重试（`IMAGES_FAILOVER_ENABLED` 可为「生成前的拒绝」单独开启）。
   - title: 协议原生互译
     details: OpenAI / Anthropic / Gemini / Responses 四族适配器，经中间格式 pivot 转换；非 OpenAI 供应商的字段映射随供应商 profile 走。
   - title: 路由与故障转移

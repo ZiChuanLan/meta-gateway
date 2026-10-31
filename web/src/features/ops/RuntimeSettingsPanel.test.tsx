@@ -47,8 +47,24 @@ const payload = (
   has_override: true,
   note: "",
   updated_at: "2026-10-06T00:00:00Z",
-  editable: { cross_channel_failover_enabled: true, retry_times: 2, ...editable },
-  env_bootstrap: { cross_channel_failover_enabled: true, retry_times: 2, ...bootstrap },
+  editable: {
+    cross_channel_failover_enabled: true,
+    retry_times: 2,
+    images_failover_enabled: false,
+    images_failover_include_ambiguous: false,
+    images_failover_include_uncertain: false,
+    routing_latency_aware: false,
+    ...editable,
+  },
+  env_bootstrap: {
+    cross_channel_failover_enabled: true,
+    retry_times: 2,
+    images_failover_enabled: false,
+    images_failover_include_ambiguous: false,
+    images_failover_include_uncertain: false,
+    routing_latency_aware: false,
+    ...bootstrap,
+  },
 });
 
 /**
@@ -243,6 +259,116 @@ it("saves a checkbox on the change itself, with no blur to wait for", async () =
   fireEvent.click(screen.getByRole("checkbox", { name: /Latency-aware routing/ }));
   await waitFor(() => expect(server.puts).toHaveLength(1));
   expect(server.puts[0]!.routing_latency_aware).toBe(true);
+});
+
+// The image escape hatch is a deliberate exception to "a billed generation is
+// never replayed", so the panel must be able to turn it on without a restart —
+// and must show it as an override once it is on.
+it("turns image-write failover on and marks it as an override", async () => {
+  const server = runtimeServer(() => payload());
+  vi.stubGlobal("fetch", server.fetcher);
+  mount(<RuntimeSettingsPanel />);
+
+  const toggle = (await screen.findByRole("checkbox", {
+    name: /Fail over image requests/,
+  })) as HTMLInputElement;
+  expect(toggle.checked).toBe(false);
+
+  fireEvent.click(toggle);
+  await screen.findByText(/Turn on “fail over image requests”\?/);
+  fireEvent.click(screen.getByRole("button", { name: /Turn on with the selected scope/ }));
+  await waitFor(() => expect(server.puts).toHaveLength(1));
+  expect(server.puts[0]!.images_failover_enabled).toBe(true);
+  expect(await screen.findByText(/Saved and applied without restart/)).toBeInTheDocument();
+
+  const row = toggle.closest(".field")!;
+  expect(row.textContent).toContain("Changed");
+});
+
+// The page carries ONE switch; its scope is chosen in the arming dialog. The
+// base scope (refusals only) costs nothing extra, so confirming without the
+// options is the safe default — and cancel writes nothing at all.
+it("opens the scope dialog when the image switch is armed, and writes only after confirmation", async () => {
+  const server = runtimeServer(() => payload({ images_failover_enabled: false }));
+  vi.stubGlobal("fetch", server.fetcher);
+  mount(<RuntimeSettingsPanel />);
+
+  const main = (await screen.findByRole("checkbox", {
+    name: /Fail over image requests/,
+  })) as HTMLInputElement;
+  fireEvent.click(main);
+
+  expect(server.puts).toHaveLength(0);
+  expect(await screen.findByText(/Turn on “fail over image requests”\?/)).toBeInTheDocument();
+  expect(main.checked).toBe(false);
+
+  // Cancel: nothing written, the box stays where it was.
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(screen.queryByText(/fail over image requests”\?/)).toBeNull());
+  expect(server.puts).toHaveLength(0);
+  expect(main.checked).toBe(false);
+
+  // Confirm with no options: base scope only.
+  fireEvent.click(main);
+  fireEvent.click(await screen.findByRole("button", { name: /Turn on with the selected scope/ }));
+  await waitFor(() => expect(server.puts).toHaveLength(1));
+  expect(server.puts[0]!.images_failover_enabled).toBe(true);
+  expect(server.puts[0]!.images_failover_include_ambiguous).toBe(false);
+  expect(server.puts[0]!.images_failover_include_uncertain).toBe(false);
+  expect(main.checked).toBe(true);
+});
+
+// The two options widen the replay set from inside the dialog. The blunt one
+// already covers 5xx, so checking it pulls the narrower box along instead of
+// leaving the two choices contradicting each other.
+it("writes the selected scope, and the blunt option implies the 5xx one", async () => {
+  const server = runtimeServer(() => payload({ images_failover_enabled: false }));
+  vi.stubGlobal("fetch", server.fetcher);
+  mount(<RuntimeSettingsPanel />);
+
+  const main = (await screen.findByRole("checkbox", {
+    name: /Fail over image requests/,
+  })) as HTMLInputElement;
+  fireEvent.click(main);
+  await screen.findByText(/Turn on “fail over image requests”\?/);
+
+  const five = screen.getByRole("checkbox", { name: /Also retry 5xx/ }) as HTMLInputElement;
+  const blunt = screen.getByRole("checkbox", {
+    name: /Retry 504, timeouts and broken streams too/,
+  }) as HTMLInputElement;
+  fireEvent.click(blunt);
+  expect(blunt.checked).toBe(true);
+  expect(five.checked).toBe(true);
+  expect(five.disabled).toBe(true);
+
+  fireEvent.click(screen.getByRole("button", { name: /Turn on with the selected scope/ }));
+  await waitFor(() => expect(server.puts).toHaveLength(1));
+  expect(server.puts[0]!.images_failover_enabled).toBe(true);
+  expect(server.puts[0]!.images_failover_include_ambiguous).toBe(true);
+  expect(server.puts[0]!.images_failover_include_uncertain).toBe(true);
+});
+
+// Turning the switch off must clear the whole scope, otherwise the next enable
+// would silently restore a setting that was only ever armed through a warning.
+it("clears the whole scope when the image switch goes off", async () => {
+  const server = runtimeServer(() =>
+    payload({
+      images_failover_enabled: true,
+      images_failover_include_ambiguous: true,
+      images_failover_include_uncertain: true,
+    }),
+  );
+  vi.stubGlobal("fetch", server.fetcher);
+  mount(<RuntimeSettingsPanel />);
+
+  const main = (await screen.findByRole("checkbox", {
+    name: /Fail over image requests/,
+  })) as HTMLInputElement;
+  fireEvent.click(main);
+  await waitFor(() => expect(server.puts).toHaveLength(1));
+  expect(server.puts[0]!.images_failover_enabled).toBe(false);
+  expect(server.puts[0]!.images_failover_include_ambiguous).toBe(false);
+  expect(server.puts[0]!.images_failover_include_uncertain).toBe(false);
 });
 
 // With instant save the operator needs to see, without a Save button to compare

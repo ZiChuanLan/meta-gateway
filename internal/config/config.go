@@ -35,6 +35,27 @@ type Config struct {
 	UpdateCheckEnabled          bool          `env:"UPDATE_CHECK_ENABLED"`
 	CrossChannelFailoverEnabled bool          `env:"CROSS_CHANNEL_FAILOVER_ENABLED"`
 	Cooldown                    time.Duration `env:"COOLDOWN_SECONDS"`
+	// ImagesFailoverEnabled is the deployment default for the opt-in escape
+	// hatch on image writes (the console can override it at runtime as
+	// images_failover_enabled). The default (false) keeps the rule that a
+	// billable generation is never replayed, because the upstream may have
+	// accepted and charged it before the failure reached us. When true, only
+	// failures that provably preceded generation (429/503/529/530 and outright
+	// request rejections) are replayed; 5xx, 504 and timeouts still stop after
+	// one attempt.
+	ImagesFailoverEnabled bool `env:"IMAGES_FAILOVER_ENABLED"`
+	// ImagesFailoverIncludeAmbiguous is the warned tier: with ImagesFailover
+	// enabled, also replay 5xx answers other than 504, which may arrive after
+	// the picture was generated and billed. 504, transport timeouts, dead
+	// streams and empty 2xx stay fatal in both tiers.
+	ImagesFailoverIncludeAmbiguous bool `env:"IMAGES_FAILOVER_INCLUDE_AMBIGUOUS"`
+	// ImagesFailoverIncludeUncertain is the blunt tier: with ImagesFailover
+	// enabled, also replay 504, transport timeouts, streams that died mid-flight
+	// and empty 2xx — every case where the upstream may already hold a finished
+	// picture and a charge. It is "retry until a picture comes back, and send it
+	// to every channel", which is a deliberate trade of a possible duplicate
+	// bill for a second attempt. Default false.
+	ImagesFailoverIncludeUncertain bool `env:"IMAGES_FAILOVER_INCLUDE_UNCERTAIN"`
 	// SQLiteMaxOpenConns is the SQLite connection-pool ceiling (WAL allows
 	// concurrent readers). Default 4; 1 restores the fully serialized behavior.
 	SQLiteMaxOpenConns int    `env:"SQLITE_MAX_OPEN_CONNS"`
@@ -233,6 +254,18 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	crossChannelFailover, err := envBool("CROSS_CHANNEL_FAILOVER_ENABLED", true)
+	if err != nil {
+		return nil, err
+	}
+	imagesFailover, err := envBool("IMAGES_FAILOVER_ENABLED", false)
+	if err != nil {
+		return nil, err
+	}
+	imagesFailoverAmbiguous, err := envBool("IMAGES_FAILOVER_INCLUDE_AMBIGUOUS", false)
+	if err != nil {
+		return nil, err
+	}
+	imagesFailoverUncertain, err := envBool("IMAGES_FAILOVER_INCLUDE_UNCERTAIN", false)
 	if err != nil {
 		return nil, err
 	}
@@ -564,21 +597,24 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		HTTPAddr:                    envStr("HTTP_ADDR", ":4100"),
-		DataDir:                     dataDir,
-		AdminToken:                  firstNonEmpty(adminTokens),
-		AdminUsername:               envStr("ADMIN_USERNAME", "admin"),
-		AdminTokenLogin:             envStr("ADMIN_TOKEN_LOGIN", ""),
-		AdminTokens:                 adminTokens,
-		MasterKey:                   envStr("MASTER_KEY", ""),
-		RetryTimes:                  retryTimes,
-		ChannelRetryTimes:           channelRetryTimes,
-		UpdateCheckEnabled:          updateCheckEnabled,
-		CrossChannelFailoverEnabled: crossChannelFailover,
-		Cooldown:                    time.Duration(cooldownSeconds) * time.Second,
-		CheckinEnabled:              checkinEnabled,
-		CheckinCron:                 envStr("CHECKIN_CRON", "0 8 * * *"),
-		CheckinTZ:                   checkinTZ,
+		HTTPAddr:                       envStr("HTTP_ADDR", ":4100"),
+		DataDir:                        dataDir,
+		AdminToken:                     firstNonEmpty(adminTokens),
+		AdminUsername:                  envStr("ADMIN_USERNAME", "admin"),
+		AdminTokenLogin:                envStr("ADMIN_TOKEN_LOGIN", ""),
+		AdminTokens:                    adminTokens,
+		MasterKey:                      envStr("MASTER_KEY", ""),
+		RetryTimes:                     retryTimes,
+		ChannelRetryTimes:              channelRetryTimes,
+		UpdateCheckEnabled:             updateCheckEnabled,
+		CrossChannelFailoverEnabled:    crossChannelFailover,
+		ImagesFailoverEnabled:          imagesFailover,
+		ImagesFailoverIncludeAmbiguous: imagesFailoverAmbiguous,
+		ImagesFailoverIncludeUncertain: imagesFailoverUncertain,
+		Cooldown:                       time.Duration(cooldownSeconds) * time.Second,
+		CheckinEnabled:                 checkinEnabled,
+		CheckinCron:                    envStr("CHECKIN_CRON", "0 8 * * *"),
+		CheckinTZ:                      checkinTZ,
 
 		WebDAVSyncEnabled:          webdavSyncEnabled,
 		WebDAVUploadEnabled:        webdavUploadEnabled,

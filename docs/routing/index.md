@@ -56,6 +56,8 @@
 | **自动禁用** | 连续失败达到 `CHANNEL_AUTO_DISABLE_THRESHOLD` | 直到恢复探测通过 | 整个渠道 |
 
 - **跨渠道重试**由 `CROSS_CHANNEL_FAILOVER_ENABLED` 控制；`RETRY_TIMES`（默认 2）是轮次上限。
+  生成类端点（图像 / 音频 / 视频 / 音乐 / `responses`）另受非幂等闸门限制：默认只发一次，
+  其中图像连 `Idempotency-Key` 都不认（见[流式 / 重试与幂等](/clients/streaming#重试与幂等)）。
 - **恢复探测**（`RECOVERY_PROBE_ENABLED` / `RECOVERY_PROBE_INTERVAL_SECONDS`）负责把冷却或禁用中的渠道静默试回来。
 - **`FAULT_PROTECTION_ENABLED`** 是这组机制的总体开关。
 

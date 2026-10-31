@@ -102,6 +102,31 @@ type Service struct {
 	retryTimes                  atomic.Int64
 	channelRetryTimes           atomic.Int64
 	crossChannelFailoverEnabled atomic.Bool
+	// imagesFailoverEnabled opts IMAGE mutations into the key/channel walk that
+	// the retry-safety gate otherwise denies them. Off by default: an image is
+	// billed on acceptance, and a replay cannot be de-duplicated across keys or
+	// channels. When on, only failures that provably happened BEFORE the
+	// upstream accepted the generation may be replayed — see
+	// imageFailureMayReplay.
+	imagesFailoverEnabled atomic.Bool
+	// imagesFailoverIncludeAmbiguous widens the gate above to server-side
+	// failures that may already have produced (and billed) a picture but did
+	// answer with a status: 5xx other than 504. An operator turns this on only
+	// after the console warning, because it trades a possible second charge for
+	// a second chance at a usable image. 504, transport timeouts, a stream that
+	// died mid-flight and an empty 2xx stay fatal in both modes: in those cases
+	// the picture may exist, so replaying is pure double spend.
+	imagesFailoverIncludeAmbiguous atomic.Bool
+	// imagesFailoverIncludeUncertain is the blunt tier: replay even when the
+	// upstream may already hold a finished picture and a charge. That covers
+	// 504, transport timeouts, a stream that died mid-flight and an empty 2xx.
+	// Nothing is provably gone in those cases, so the operator is trading a
+	// possible duplicate bill for a second attempt — the console asks for an
+	// explicit confirmation and calls it out. The only stop left is the
+	// caller's own context: once the client is gone, re-sending spends money
+	// for nobody. Local adapter failures stay fatal too — they are our bug, not
+	// an upstream answer.
+	imagesFailoverIncludeUncertain atomic.Bool
 	// keyPoolCursor advances once per pool resolution and picks the starting
 	// key inside a priority tier, so equal-priority keys rotate instead of
 	// pinning every request on the first one. Process-wide and monotonic: a
@@ -591,6 +616,54 @@ func (s *Service) SetRetryPolicy(retryTimes int, cooldown time.Duration) {
 // retained while disabled, so re-enabling restores the configured behavior.
 func (s *Service) SetCrossChannelFailoverEnabled(enabled bool) {
 	s.crossChannelFailoverEnabled.Store(enabled)
+}
+
+// SetImagesFailoverEnabled hot-applies the opt-in escape hatch for image
+// failover. Off by default: with it on, only a failure that provably happened
+// before the upstream accepted the generation is replayed on another key or
+// channel (see imageFailureMayReplay), because a replayed image generation the
+// first upstream already billed is money the operator cannot get back or even
+// discover afterwards.
+func (s *Service) SetImagesFailoverEnabled(enabled bool) {
+	s.imagesFailoverEnabled.Store(enabled)
+}
+
+// SetImagesFailoverIncludeAmbiguous widens image failover to 5xx answers other
+// than 504. It is the console's warned tier: a 500/502 may arrive after the
+// upstream already generated — and charged — the picture, so replaying it can
+// buy a second image and a second bill. Meaningless while image failover is
+// off, which is why the console only offers it as a sub-option.
+func (s *Service) SetImagesFailoverIncludeAmbiguous(enabled bool) {
+	s.imagesFailoverIncludeAmbiguous.Store(enabled)
+}
+
+// ImagesFailoverIncludeAmbiguous reports the tier in effect for the next image
+// request.
+func (s *Service) ImagesFailoverIncludeAmbiguous() bool {
+	return s.imagesFailoverIncludeAmbiguous.Load()
+}
+
+// SetImagesFailoverIncludeUncertain opens the last gate: a 504, a transport
+// timeout, a stream that broke mid-flight or an empty 2xx may all mean the
+// upstream already produced (and billed) the picture. Replaying them is
+// therefore "try again and possibly pay twice", not "recover a refused
+// request". It exists because an operator may legitimately prefer a usable
+// image to a dead request every time — but the console makes them say so out
+// loud. Meaningless while image failover is off.
+func (s *Service) SetImagesFailoverIncludeUncertain(enabled bool) {
+	s.imagesFailoverIncludeUncertain.Store(enabled)
+}
+
+// ImagesFailoverIncludeUncertain reports whether the blunt tier is on.
+func (s *Service) ImagesFailoverIncludeUncertain() bool {
+	return s.imagesFailoverIncludeUncertain.Load()
+}
+
+// ImagesFailoverEnabled reports the flag the next image request will read. It
+// exists so a runtime-settings save can be proven to have reached the proxy
+// instead of only the database.
+func (s *Service) ImagesFailoverEnabled() bool {
+	return s.imagesFailoverEnabled.Load()
 }
 
 // SetChannelRetryTimes hot-updates how many times the same upstream key is

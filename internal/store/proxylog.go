@@ -115,6 +115,32 @@ func (s *ProxyLogStore) List(limit int) ([]domain.ProxyLog, error) {
 	return s.ListFilter(ProxyLogFilter{Limit: limit})
 }
 
+// MarkSuperseded folds every earlier attempt of this request into keepID.
+//
+// One request produces one upstream attempt row per channel (and per key
+// re-send), which is exactly what the audit, health and billing paths need. What
+// it should not produce is a console list where a single failed-over request
+// shows up three times: the operator then has to reconstruct the walk by
+// matching request ids by eye. So each new attempt points its predecessors at
+// itself, and list queries read only the rows nothing points at.
+//
+// The earlier rows are not deleted: they are the chain (see attachAttempts) and
+// the only record of what each channel answered.
+func (s *ProxyLogStore) MarkSuperseded(requestID string, keepID int64) error {
+	if strings.TrimSpace(requestID) == "" || keepID <= 0 {
+		return nil
+	}
+	_, err := s.db.Exec(
+		`UPDATE proxy_logs SET merged_into = ?
+		 WHERE request_id = ? AND id <> ? AND merged_into IS NULL`,
+		keepID, requestID, keepID,
+	)
+	if err != nil {
+		return fmt.Errorf("proxylog mark superseded: %w", err)
+	}
+	return nil
+}
+
 // LatencyBucketBounds are the histogram upper bounds in milliseconds (AAH
 // USAGE_HISTORY_LATENCY_BUCKET_UPPER_BOUNDS_SECONDS, x1000). The final bucket
 // is open-ended (>= 34s).
@@ -146,8 +172,12 @@ type LatencyHistogram struct {
 // "YYYY-MM-DD HH:MM:SS"); an RFC3339 bound would string-compare greater
 // than every row and silently return zeros.
 func (s *ProxyLogStore) FailRate(since time.Time) (total, failed int) {
+	// Count requests, not attempts: the console lists one row per request, so a
+	// request that failed over and then succeeded must read as one success here
+	// too. Counting raw rows made the two numbers disagree.
 	row := s.db.QueryRow(
-		`SELECT COUNT(*), COALESCE(SUM(CASE WHEN status >= 400 OR error_brief <> '' THEN 1 ELSE 0 END), 0) FROM proxy_logs WHERE created_at >= ?`,
+		`SELECT COUNT(*), COALESCE(SUM(CASE WHEN status >= 400 OR error_brief <> '' THEN 1 ELSE 0 END), 0)
+		 FROM proxy_logs WHERE created_at >= ? AND merged_into IS NULL`,
 		sqliteUTC(since),
 	)
 	_ = row.Scan(&total, &failed)
@@ -182,6 +212,13 @@ func (s *ProxyLogStore) latencyHistogram(table, order string, userID *int64, sam
 	if userID != nil {
 		where = append(where, "user_id = ?")
 		args = append(args, *userID)
+	}
+	if table == "proxy_logs" {
+		// One row per request, matching the log table: a request that failed
+		// over and then succeeded must not also draw a failed attempt's latency
+		// into the distribution, or p95 describes upstream attempts instead of
+		// what the client waited for.
+		where = append(where, "merged_into IS NULL")
 	}
 	scope := ""
 	if len(where) > 0 {
@@ -259,7 +296,11 @@ func (s *ProxyLogStore) ListFilter(f ProxyLogFilter) ([]domain.ProxyLog, error) 
 		limit = 500
 	}
 
-	where := []string{"1=1"}
+	// One request, one row: every attempt but the last is marked merged_into,
+	// and the chain it belongs to is attached below as Attempts. Without this
+	// clause the list shows a failed-over request once per channel, which is the
+	// thing operators were reading as three separate requests.
+	where := []string{"pl.merged_into IS NULL"}
 	args := []any{}
 	needsChannelJoin := f.SiteID != nil
 
@@ -300,16 +341,20 @@ func (s *ProxyLogStore) ListFilter(f ProxyLogFilter) ([]domain.ProxyLog, error) 
 
 	from := "proxy_logs pl"
 	if query := strings.TrimSpace(f.Query); query != "" {
+		// The search runs over the request's WHOLE chain, not just the surviving
+		// row: the error an operator greps for is usually the one a hop returned
+		// before the request was retried somewhere else, and that hop has been
+		// merged away. Matching request ids keeps the result "one row per
+		// request" while still finding it by any hop's error text.
 		if match := BuildLogFTSMatch(query); match != "" && s.fts.Available(s.db) {
-			from += " INNER JOIN proxy_logs_fts fts ON fts.rowid = pl.id"
-			where = append(where, "proxy_logs_fts MATCH ?")
+			where = append(where, "pl.request_id IN (SELECT request_id FROM proxy_logs WHERE id IN (SELECT rowid FROM proxy_logs_fts WHERE proxy_logs_fts MATCH ?))")
 			args = append(args, match)
 		} else {
 			// No FTS5 (or nothing tokenizable): substring scan over the same
-			// columns. Slower, but the feature still works.
+			// columns. Slower, but the feature still works — and still spans the
+			// chain, for the same reason as above.
 			like := "%" + strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(query) + "%"
-			where = append(where,
-				"(pl.model LIKE ? ESCAPE '\\' OR pl.error_brief LIKE ? ESCAPE '\\' OR pl.error_detail LIKE ? ESCAPE '\\' OR pl.path LIKE ? ESCAPE '\\' OR pl.request_id LIKE ? ESCAPE '\\' OR pl.upstream_request_id LIKE ? ESCAPE '\\' OR pl.upstream_url LIKE ? ESCAPE '\\' OR pl.client_ua LIKE ? ESCAPE '\\')")
+			where = append(where, `(pl.request_id IN (SELECT request_id FROM proxy_logs WHERE model LIKE ? ESCAPE '\' OR error_brief LIKE ? ESCAPE '\' OR error_detail LIKE ? ESCAPE '\' OR path LIKE ? ESCAPE '\' OR request_id LIKE ? ESCAPE '\' OR upstream_request_id LIKE ? ESCAPE '\' OR upstream_url LIKE ? ESCAPE '\' OR client_ua LIKE ? ESCAPE '\'))`)
 			args = append(args, like, like, like, like, like, like, like, like)
 		}
 	}
@@ -357,7 +402,97 @@ LIMIT ?`
 		r.Stream = stream != 0
 		result = append(result, r)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := s.attachAttempts(result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// attemptChainLimit bounds how many hops one request can return. The retry
+// settings already bound a chain in practice; this is the backstop for a
+// pathological one, because the alternative (an unbounded array per row) is how
+// a single log record once grew into hundreds of megabytes in the wild.
+const attemptChainLimit = 20
+
+// attachAttempts fills in each row's failover chain from the attempt rows that
+// were merged into it.
+//
+// Rows are read newest-first, but a chain has to read in walk order, so this is
+// one extra query for the whole page (grouped by request_id, ordered by id) and
+// not one per row. A request with a single attempt gets a one-hop chain, so the
+// console never has to special-case "no failover happened".
+func (s *ProxyLogStore) attachAttempts(rows []domain.ProxyLog) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(rows))
+	seen := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		if row.RequestID == "" {
+			continue
+		}
+		if _, ok := seen[row.RequestID]; ok {
+			continue
+		}
+		seen[row.RequestID] = struct{}{}
+		ids = append(ids, row.RequestID)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	/* #nosec G202 -- placeholders are generated, ids are bound parameters. */
+	query := `SELECT id, request_id, attempt, key_retries, channel_id, model,
+		COALESCE(upstream_model, ''), status, latency_ms, COALESCE(error_brief, ''),
+		COALESCE(error_detail, ''), COALESCE(upstream_url, ''), created_at
+		FROM proxy_logs WHERE request_id IN (` + placeholders + `) ORDER BY request_id, id`
+	cursor, err := s.db.Query(query, args...)
+	if err != nil {
+		return fmt.Errorf("proxylog attempts: %w", err)
+	}
+	defer cursor.Close()
+
+	chains := make(map[string][]domain.ProxyLogAttempt, len(ids))
+	for cursor.Next() {
+		var requestID string
+		var hop domain.ProxyLogAttempt
+		if err := cursor.Scan(
+			&hop.LogID, &requestID, &hop.Attempt, &hop.KeyRetries, &hop.ChannelID, &hop.Model,
+			&hop.UpstreamModel, &hop.Status, &hop.LatencyMs, &hop.ErrorBrief, &hop.ErrorDetail,
+			&hop.UpstreamURL, scanTime(&hop.CreatedAt),
+		); err != nil {
+			return fmt.Errorf("proxylog attempts scan: %w", err)
+		}
+		chains[requestID] = append(chains[requestID], hop)
+	}
+	if err := cursor.Err(); err != nil {
+		return err
+	}
+	for i := range rows {
+		chain := chains[rows[i].RequestID]
+		if len(chain) > attemptChainLimit {
+			// Keep both ends: where the request started and what was finally
+			// returned. The middle is reconstructible from the raw rows by id.
+			half := attemptChainLimit / 2
+			trimmed := make([]domain.ProxyLogAttempt, 0, attemptChainLimit)
+			trimmed = append(trimmed, chain[:half]...)
+			trimmed = append(trimmed, chain[len(chain)-half:]...)
+			chain = trimmed
+			rows[i].AttemptsTruncated = true
+		}
+		if len(chain) > 0 {
+			chain[len(chain)-1].Final = true
+		}
+		rows[i].Attempts = chain
+	}
+	return nil
 }
 
 // UpdateTokensByRequestID attaches metered tokens to the newest log row for a

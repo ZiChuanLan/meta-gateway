@@ -776,6 +776,53 @@ type ProxyLog struct {
 	// only in admin list responses, and it carries the pricing rule snapshot
 	// rather than any credential.
 	Billing []BillingExplanation `json:"billing,omitempty"`
+	// Attempts is this request's failover chain in the order the gateway walked
+	// it: one entry per upstream attempt, the last one being the answer the
+	// client actually got. It is derived at read time from the attempt rows that
+	// were merged into this one (see merged_into), not stored twice, so a chain
+	// can never drift from the rows that produced it. Populated only in list
+	// responses; always contains at least the row itself.
+	Attempts []ProxyLogAttempt `json:"attempts,omitempty"`
+	// AttemptsTruncated reports that the request made more attempts than the
+	// chain limit, and the middle of the chain was dropped. The first hops and
+	// the final one are always kept: "where did it start" and "what did we
+	// finally return" are the two ends an operator needs. Without a cap a
+	// pathological request would return an unbounded array — the failure mode
+	// octopus hit when a single log row grew to 805 MB.
+	AttemptsTruncated bool `json:"attempts_truncated,omitempty"`
+}
+
+// ProxyLogAttempt is one hop of a request's failover chain. It is a projection
+// of the attempt's proxy_logs row, not a separate record: the row still exists
+// (merged into the final one), and this is the slice of it the console needs to
+// answer "which channel/model did we try, in what order, and what did each one
+// say".
+type ProxyLogAttempt struct {
+	// LogID is the proxy_logs row id of this hop, so a reader can still look the
+	// raw attempt up (it is the same id the console would have shown as its own
+	// row before the merge).
+	LogID int64 `json:"log_id"`
+	// Attempt is the failover round (0 = first channel tried). KeyRetries is
+	// which same-key re-send inside that round, so a chain that looks like one
+	// channel twice is explained rather than confusing.
+	Attempt    int   `json:"attempt"`
+	KeyRetries int   `json:"key_retries,omitempty"`
+	ChannelID  int64 `json:"channel_id"`
+	// Model is the client-facing name; UpstreamModel is what this hop actually
+	// asked for, which differs whenever the channel maps the alias.
+	Model         string `json:"model,omitempty"`
+	UpstreamModel string `json:"upstream_model,omitempty"`
+	Status        int    `json:"status"`
+	LatencyMs     int    `json:"latency_ms"`
+	ErrorBrief    string `json:"error_brief,omitempty"`
+	// ErrorDetail is the same truncated upstream excerpt the row carries: the
+	// error body text, or the transport error when nothing answered.
+	ErrorDetail string    `json:"error_detail,omitempty"`
+	UpstreamURL string    `json:"upstream_url,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	// Final marks the hop whose answer the client received. Exactly one hop is
+	// final.
+	Final bool `json:"final,omitempty"`
 }
 
 // BillingExplanation is one usage record's billing decision, attached to an

@@ -18,6 +18,7 @@ import { useSession } from "../../session";
 import { useUnsavedChanges } from "../../lib/unsavedChanges";
 import {
   Button,
+  Dialog,
   ErrorState,
   InfoTip,
   Loading,
@@ -95,7 +96,14 @@ interface RuntimeGroup {
 const RELAY_SECTION: RuntimeSection = {
   key: "relay",
   label: "ops.runtime.section.relay",
-  fields: ["cross_channel_failover_enabled", "retry_times", "channel_retry_times"],
+  fields: [
+    "cross_channel_failover_enabled",
+    "retry_times",
+    "channel_retry_times",
+    "images_failover_enabled",
+    "images_failover_include_ambiguous",
+    "images_failover_include_uncertain",
+  ],
 };
 
 /**
@@ -380,6 +388,12 @@ export function RuntimeSettingsPanel({
     RUNTIME_GROUPS[0]!.sections[0]!.key,
   );
   const [pendingScroll, setPendingScroll] = useState<string | null>(null);
+  // The image-failover switch is the one switch whose click is not a save: it
+  // opens a dialog that asks how far the replay set should reach, because the
+  // far end of it can bill one picture twice.
+  const [confirmingImagesFailover, setConfirmingImagesFailover] = useState(false);
+  const [armAmbiguous, setArmAmbiguous] = useState(false);
+  const [armUncertain, setArmUncertain] = useState(false);
   // While an explicit jump is settling, the reader's position is not an opinion —
   // see selectSection.
   const spyPauseUntilRef = useRef(0);
@@ -946,6 +960,38 @@ export function RuntimeSettingsPanel({
                       numberOr(e.target.value, draft.channel_retry_times),
                     )
                   }
+                />
+              </RuntimeRow>
+              <RuntimeRow
+                label={t("ops.runtime.imagesFailover")}
+                hint={t("ops.runtime.imagesFailoverHint")}
+                changed={
+                  isChanged("images_failover_enabled") ||
+                  isChanged("images_failover_include_ambiguous") ||
+                  isChanged("images_failover_include_uncertain")
+                }
+              >
+                <input
+                  type="checkbox"
+                  disabled={busy}
+                  checked={draft.images_failover_enabled}
+                  onChange={(e) => {
+                    const on = e.target.checked;
+                    if (on) {
+                      // One switch on the page; the scope of the replay set is
+                      // chosen inside the arming dialog. Fresh state every time,
+                      // so a previous half-armed choice never leaks in.
+                      setArmAmbiguous(false);
+                      setArmUncertain(false);
+                      setConfirmingImagesFailover(true);
+                      return;
+                    }
+                    // Disarming is free and clears everything, never leaving a
+                    // half-armed state behind.
+                    patch("images_failover_enabled", false);
+                    patch("images_failover_include_ambiguous", false);
+                    patch("images_failover_include_uncertain", false);
+                  }}
                 />
               </RuntimeRow>
             </SectionCard>
@@ -2257,6 +2303,68 @@ export function RuntimeSettingsPanel({
           entry now opens the same dialog the top-bar pill does. */}
       {updateOpen && updateCheckQuery.data ? (
         <UpdateDialog update={updateCheckQuery.data} onClose={() => setUpdateOpen(false)} />
+      ) : null}
+
+      {/* The image switch is a single warned arm: the base scope replays only
+          the failures that provably preceded generation; the two options widen
+          it, and the wide one can bill a picture twice, so nothing is saved
+          until the dialog is confirmed. Turning the switch back off is free and
+          immediate. */}
+      {confirmingImagesFailover ? (
+        <Dialog
+          title={t("ops.runtime.imagesFailoverDialogTitle")}
+          onClose={() => setConfirmingImagesFailover(false)}
+          danger
+          actions={
+            <>
+              <Button variant="secondary" onClick={() => setConfirmingImagesFailover(false)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  patch("images_failover_enabled", true);
+                  patch("images_failover_include_ambiguous", armAmbiguous);
+                  patch("images_failover_include_uncertain", armUncertain);
+                  setConfirmingImagesFailover(false);
+                  flush();
+                }}
+              >
+                {t("ops.runtime.imagesFailoverArm")}
+              </Button>
+            </>
+          }
+        >
+          <p>{t("ops.runtime.imagesFailoverDialogIntro")}</p>
+          <label className="images-arm-option">
+            <input
+              type="checkbox"
+              checked={armAmbiguous}
+              disabled={armUncertain}
+              onChange={(e) => setArmAmbiguous(e.target.checked)}
+            />
+            <span>
+              <strong>{t("ops.runtime.imagesFailoverArmAmbiguous")}</strong>
+              <small>{t("ops.runtime.imagesFailoverArmAmbiguousNote")}</small>
+            </span>
+          </label>
+          <label className="images-arm-option">
+            <input
+              type="checkbox"
+              checked={armUncertain}
+              onChange={(e) => {
+                setArmUncertain(e.target.checked);
+                // The blunt tier already replays 5xx; keeping the narrower box
+                // in sync stops the two options from contradicting each other.
+                if (e.target.checked) setArmAmbiguous(true);
+              }}
+            />
+            <span>
+              <strong>{t("ops.runtime.imagesFailoverArmUncertain")}</strong>
+              <small>{t("ops.runtime.imagesFailoverArmUncertainNote")}</small>
+            </span>
+          </label>
+        </Dialog>
       ) : null}
     </div>
   );

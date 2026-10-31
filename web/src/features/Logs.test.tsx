@@ -201,6 +201,77 @@ describe("log row drill-down", () => {
     vi.unstubAllGlobals();
   });
 
+  // A request that failed over used to appear once per channel and the operator
+  // had to stitch the walk together from request ids. Now the list carries ONE
+  // row whose trail names every stop, and expanding it shows what each stop said.
+  it("shows the failover walk in the row and its per-hop errors when expanded", async () => {
+    renderLogs("/logs", [
+      {
+        id: 9,
+        request_id: "req-failover",
+        model: "gpt-5",
+        status: 200,
+        latency_ms: 900,
+        attempt: 2,
+        channel_id: 3,
+        created_at: "2026-09-30T10:00:00Z",
+        attempts: [
+          {
+            log_id: 7,
+            attempt: 1,
+            channel_id: 1,
+            model: "gpt-5",
+            status: 429,
+            latency_ms: 120,
+            error_brief: "upstream_status_429",
+            error_detail: "rate limited by upstream",
+            created_at: "2026-09-30T10:00:00Z",
+          },
+          {
+            log_id: 8,
+            attempt: 1,
+            key_retries: 1,
+            channel_id: 2,
+            model: "gpt-5",
+            status: 502,
+            latency_ms: 300,
+            error_brief: "upstream_status_502",
+            error_detail: "bad gateway from origin",
+            created_at: "2026-09-30T10:00:01Z",
+          },
+          {
+            log_id: 9,
+            attempt: 2,
+            channel_id: 3,
+            model: "gpt-5",
+            status: 200,
+            latency_ms: 900,
+            created_at: "2026-09-30T10:00:02Z",
+            final: true,
+          },
+        ],
+      },
+    ]);
+    await screen.findByText("gpt-5");
+
+    // The compact trail lives in the channel cell: stops in walk order, failed
+    // ones carrying their status.
+    expect(screen.getByText("3 attempts")).toBeInTheDocument();
+    expect(screen.getByText("#1")).toBeInTheDocument();
+    expect(screen.getByText("429")).toBeInTheDocument();
+    expect(screen.getByText("502")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("gpt-5"));
+    expect(await screen.findByText("Failover chain")).toBeInTheDocument();
+    expect(screen.getByText("3 hops")).toBeInTheDocument();
+    expect(screen.getByText("rate limited by upstream")).toBeInTheDocument();
+    expect(screen.getByText("bad gateway from origin")).toBeInTheDocument();
+    expect(screen.getByText("final")).toBeInTheDocument();
+    // The walk is numbered, so a screenshot-free bug report can cite a hop.
+    expect(screen.getByText("attempt 1")).toBeInTheDocument();
+    expect(screen.getByText("attempt 3")).toBeInTheDocument();
+  });
+
   // A row answers "what happened"; the operator still has to ask "for whom,
   // through what, and to which endpoint". The expansion carries that chain plus
   // the forensics the collapsed row has no room for.

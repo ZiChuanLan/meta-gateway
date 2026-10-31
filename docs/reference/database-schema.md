@@ -6,7 +6,7 @@
 引擎是 SQLite（WAL 模式），迁移脚本是 `internal/store/NNN_*.sql`，按文件名的数字序执行。
 本页由生成器**实际迁移一个临时数据库再读回 schema**得出，所以它反映的是代码最终产生的结构，而不是对 SQL 文本的解析结果。
 
-当前：`internal/store/` 下 **140** 个 `.sql` 文件，其中 **140** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
+当前：`internal/store/` 下 **144** 个 `.sql` 文件，其中 **144** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
 
 ## 迁移铁律
 
@@ -596,7 +596,7 @@
 | `created_at` | TEXT | 是 | — | — |
 | `updated_at` | TEXT | 是 | — | — |
 
-### proxy_logs · 35 列
+### proxy_logs · 36 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
 | --- | --- | --- | --- | --- |
@@ -635,6 +635,7 @@
 | `request_kind` | TEXT | 是 | 'traffic' | — |
 | `key_retries` | INTEGER | 是 | 0 | — |
 | `client_ua` | TEXT | 是 | '' | — |
+| `merged_into` | INTEGER | — | — | — |
 
 ### redemption_codes · 8 列
 
@@ -725,7 +726,7 @@
 | `image_edit_shim` | INTEGER | 是 | 0 | — |
 | `sticky_session` | INTEGER | — | — | — |
 
-### runtime_settings · 73 列
+### runtime_settings · 76 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
 | --- | --- | --- | --- | --- |
@@ -802,6 +803,9 @@
 | `relay_max_body_mb` | INTEGER | 是 | 0 | — |
 | `relay_max_image_mb` | INTEGER | 是 | 0 | — |
 | `site_news_interval_seconds` | INTEGER | — | — | — |
+| `images_failover_enabled` | INTEGER | — | — | — |
+| `images_failover_include_ambiguous` | INTEGER | — | — | — |
+| `images_failover_include_uncertain` | INTEGER | — | — | — |
 
 ### schema_migrations · 2 列
 
@@ -1125,7 +1129,7 @@
 
 ## 索引
 
-共 **85** 个索引。
+共 **86** 个索引。
 
 | 索引 | 表 | 唯一 |
 | --- | --- | --- |
@@ -1181,6 +1185,7 @@
 | `idx_proxy_logs_id` | `proxy_logs` | — |
 | `idx_proxy_logs_member_time` | `proxy_logs` | — |
 | `idx_proxy_logs_model` | `proxy_logs` | — |
+| `idx_proxy_logs_open` | `proxy_logs` | — |
 | `idx_proxy_logs_request_id` | `proxy_logs` | — |
 | `idx_proxy_logs_route_id` | `proxy_logs` | — |
 | `idx_proxy_logs_upstream_request_id` | `proxy_logs` | — |

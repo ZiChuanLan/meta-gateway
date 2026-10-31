@@ -178,11 +178,20 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 	// upstream's "404 page not found".
 	var responsesRefusal error
 	retrySafe := retrySafeRequest(req)
+	// The opt-in escape hatch for image mutations: images are the one family
+	// the retry matrix never re-opens (an idempotency header cannot de-duplicate
+	// a generation across keys or channels), so an operator who accepts that risk
+	// can turn the walk back on. It is still not a blank cheque — the per-answer
+	// gate below re-checks every failure and only continues when the upstream
+	// provably rejected the request before generating anything.
+	imagesReplayOnReject := !retrySafe && !pinnedUpstream(req) && s.imagesFailoverEnabled.Load() && imageMutation(req)
+	imagesReplayAmbiguous := imagesReplayOnReject && s.imagesFailoverIncludeAmbiguous.Load()
+	imagesReplayUncertain := imagesReplayOnReject && s.imagesFailoverIncludeUncertain.Load()
 	// Route-level retry overrides tune the round counts (retry_times /
 	// channel_retry_times) but cannot re-enable cross-channel failover when
 	// the process default is off, bypass an admin channel pin, or skip the
 	// non-idempotent-write safety gate.
-	allowCrossChannelRetries := s.crossChannelFailoverEnabled.Load() && !pinnedUpstream(req) && retrySafe
+	allowCrossChannelRetries := s.crossChannelFailoverEnabled.Load() && !pinnedUpstream(req) && (retrySafe || imagesReplayOnReject)
 	if req.TeamAccess != nil && req.TeamAccess.DisableFailover {
 		allowCrossChannelRetries = false
 	}
@@ -191,7 +200,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 		maxAttempts = 0
 	}
 	cooldown := time.Duration(s.cooldownNs.Load())
-	if !retrySafe {
+	if !retrySafe && !imagesReplayOnReject {
 		// A lost response after a successful generation/charge must not be
 		// replayed against another key or channel unless the caller supplied an
 		// idempotency key that the upstream can honor.
@@ -421,6 +430,14 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 			continue
 		}
 
+		// stopWalk marks this channel attempt as one that must not be replayed: set
+		// when an image failure cannot be proven to have happened before the
+		// upstream generated anything. It is read twice — by the key loop (stop
+		// walking keys) and by the failure tail (stop walking channels: a 4xx that
+		// is not on the image whitelist would otherwise cool the member down and
+		// move on).
+		stopWalk := false
+
 	restartKeyPool:
 		// No key has been re-sent yet in this channel attempt: the same-key counter
 		// restarts with the pool (and with a credential refresh, which jumps back
@@ -429,8 +446,10 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 		// A non-idempotent write must never be replayed with another site key:
 		// the first upstream may have accepted/charged it before the transport
 		// error reached us. Re-apply this cap at the label because a successful
-		// credential refresh replaces the pool before jumping back here.
-		if !retrySafe && len(apiKeys) > 1 {
+		// credential refresh replaces the pool before jumping back here. The
+		// image opt-in lifts the cap here; the per-answer gate below keeps the
+		// ambiguous failures single-shot.
+		if !retrySafe && !imagesReplayOnReject && len(apiKeys) > 1 {
 			apiKeys = apiKeys[:1]
 		}
 		for keyIndex, apiKey := range apiKeys {
@@ -438,7 +457,18 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 			if channelRetryOverride != nil {
 				keyRetries = clampInt(*channelRetryOverride, 0, 5)
 			}
-			if !retrySafe {
+			// Images never re-send on the same key by default: the statuses that
+			// reach this point are refusals (rate limit, overload, endpoint
+			// mismatch), and none of them heal by hammering the same key again — a
+			// re-send belongs on a different key or channel.
+			//
+			// The wider tiers are the exception. A 500/502 — or, in the blunt
+			// tier, a timeout or a dead stream — is exactly the kind of failure a
+			// plain re-send clears, and a single-channel deployment has no other
+			// key or channel to walk to. Without this the tier would be a no-op
+			// there. The budget is the same same-key budget ordinary requests get
+			// (CHANNEL_RETRY_TIMES, or the route's override).
+			if !retrySafe && !imagesReplayAmbiguous && !imagesReplayUncertain {
 				keyRetries = 0
 			}
 			for keyAttempt := 0; ; keyAttempt++ {
@@ -686,6 +716,20 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 					}
 					retryable = true
 				}
+				// Image replay gate (opt-in only). Every failure is re-judged once
+				// the answer is in, because the path-level gate above cannot know
+				// whether the upstream had already generated (and billed) the image:
+				//   rejected before working  → replay on the next key/channel
+				//   504 / timeout / dead stream / empty 2xx → may already be generated
+				// Under the blunt tier those become replayable too; otherwise they
+				// stop the walk here.
+				// The second case also clears retryable, which makes the tail below
+				// return the answer instead of cooling the member down and walking
+				// to the next candidate.
+				if imagesReplayOnReject && !imageFailureMayReplay(result, imagesReplayAmbiguous, imagesReplayUncertain) {
+					stopWalk = true
+					retryable = false
+				}
 				// The channel consecutive-failure counter is incremented exactly once
 				// per failed attempt (inside recordMemberFailure below); counting here
 				// too would over-count a multi-key pool (3 keys + member = 4) and
@@ -698,12 +742,30 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 					// move to the next key (the channel-level branch decides failover).
 					break
 				}
-				if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) || ctx.Err() != nil {
+				// A dead caller context ends the walk in every mode: re-sending a
+				// picture nobody is waiting for only spends money.
+				if ctx.Err() != nil {
+					break
+				}
+				// A transport timeout under the blunt image tier is a "the upstream
+				// took too long" answer, which is precisely what that tier is for.
+				if !imagesReplayUncertain &&
+					(errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded)) {
 					break
 				}
 				// Retryable transport/business failures are re-sent on the same key
 				// up to channelRetryTimes. Once exhausted, the key pool and then the
 				// configured cross-channel retry rounds continue normally.
+				//
+				// The wider image tiers are the one request family that gets a
+				// same-key budget while being a non-idempotent write. It is scoped
+				// to 5xx in the warned tier on purpose — a refusal (429/503) still
+				// walks on to another key instead of being hammered, because it
+				// cannot heal in milliseconds. The blunt tier lifts the scoping,
+				// since a timeout is exactly the failure a second try may clear.
+				if !retrySafe && !imagesReplayUncertain && !(result.Err == nil && result.StatusCode >= 500) {
+					break
+				}
 				if keyAttempt >= keyRetries {
 					break
 				}
@@ -717,10 +779,10 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 			if refreshed && result.Err == nil && result.StatusCode >= 200 && result.StatusCode < 300 {
 				category = "refresh_retry"
 			}
-			if keyIndex == len(apiKeys)-1 || (result.Err == nil && !retryable) {
+			if keyIndex == len(apiKeys)-1 || stopWalk || (result.Err == nil && !retryable) {
 				s.recordAttempt(req, candidate, attempt+1, result, category, keyFingerprint(apiKey.Secret), apiKey.CredentialID)
 			}
-			if result.Err == nil && !retryable {
+			if stopWalk || (result.Err == nil && !retryable) {
 				break
 			}
 			if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) || ctx.Err() != nil {
@@ -859,7 +921,7 @@ func (s *Service) ForwardWithMeta(ctx context.Context, req Request) (finalResult
 			if pinnedUpstream(req) {
 				return result, meta
 			}
-		} else if result.Err == nil && result.StatusCode >= 400 && result.StatusCode < 500 {
+		} else if !stopWalk && result.Err == nil && result.StatusCode >= 400 && result.StatusCode < 500 {
 			// A model_not_found / unknown-model response is permanent for this
 			// channel × real-name combination. Detected once here: the blacklist
 			// write below keys on the EFFECTIVE (mapped) name so sibling
@@ -1118,11 +1180,10 @@ func requestHeader(headers map[string]string, name string) string {
 // calls (chat, completions, embeddings, moderations, and custom paths such as
 // TypeSafe's /v1/systemone) keep their retries.
 func retrySafeRequest(req Request) bool {
-	method := strings.ToUpper(strings.TrimSpace(req.Method))
-	if method != http.MethodPost && method != http.MethodPut && method != http.MethodPatch {
+	if !isWriteMethod(req.Method) {
 		return true
 	}
-	path := strings.TrimPrefix(strings.Trim(strings.ToLower(req.OpenAIPath), "/"), "v1/")
+	path := normalizedRelayPath(req.OpenAIPath)
 	// Image operations may already have been accepted and charged. An
 	// idempotency header cannot guarantee deduplication across channels/keys.
 	if strings.HasPrefix(path, "images/") {
@@ -1160,6 +1221,104 @@ func hasPathPrefix(path string, prefixes ...string) bool {
 		if strings.HasPrefix(path, prefix) {
 			return true
 		}
+	}
+	return false
+}
+
+// isWriteMethod reports whether the method mutates upstream state. Reads are
+// always replayable, so the retry matrix only ever reasons about these.
+func isWriteMethod(method string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
+		return true
+	}
+	return false
+}
+
+// normalizedRelayPath lowercases the OpenAI path, drops the surrounding slashes
+// and the /v1 prefix, so "v1/images/edits", "/v1/images/edits" and
+// "images/edits" all match the retry matrix the same way.
+func normalizedRelayPath(path string) string {
+	return strings.TrimPrefix(strings.Trim(strings.ToLower(path), "/"), "v1/")
+}
+
+// imageMutation reports whether this request is an image write — the only
+// family the IMAGES_FAILOVER_ENABLED escape hatch applies to. Reads never reach
+// this decision: they are retry-safe already.
+func imageMutation(req Request) bool {
+	if !isWriteMethod(req.Method) {
+		return false
+	}
+	return strings.HasPrefix(normalizedRelayPath(req.OpenAIPath), "images/")
+}
+
+// imageFailureMayReplay decides, for an opted-in image request, whether the
+// failed attempt may be replayed on another key or channel.
+//
+// The exception exists because image writes are expensive one-shot artifacts,
+// so the default answer to every failure is "no". But "no" costs the operator a
+// dead request whenever the upstream merely refused to start — and those cases
+// are unambiguous. So the whitelist is built the other way round: replay only
+// what cannot possibly have generated anything.
+//
+//	transport error, no status      no   — may have been accepted
+//	2xx with no usable body         no   — it ran, the answer was just empty
+//	504                             no   — gave up waiting; work is likely running
+//	5xx while includeAmbiguous      yes  — it answered, so the operator chose to
+//	                                       trade a possible second bill for a retry
+//	429, 503, 529, 530              yes  — refused before generating (overload/rate limit)
+//	400, 401, 403, 404, 405, …      yes  — the request itself was refused
+//
+// includeUncertain is the blunt tier: every "no" above flips to "yes". It does
+// not argue that the failure was safe — it accepts that the upstream may be
+// holding a finished image and a charge, and replays anyway, because the
+// operator decided a usable picture beats a dead request. Local adapter
+// failures stay fatal even here: they are our own bug, not an upstream answer,
+// and re-sending them only burns the retry budget.
+func imageFailureMayReplay(result *relay.Result, includeAmbiguous, includeUncertain bool) bool {
+	if result == nil {
+		return false
+	}
+	if includeUncertain {
+		if result.Err != nil {
+			return !isLocalFailure(result.Err)
+		}
+		return true
+	}
+	// No HTTP answer at all, or a stream that died after the upstream had
+	// already accepted the generation.
+	if result.Err != nil {
+		return false
+	}
+	if result.StatusCode >= 200 && result.StatusCode < 300 {
+		// A success: the caller returns it, nothing to stop.
+		return true
+	}
+	switch result.StatusCode {
+	case http.StatusTooManyRequests,
+		http.StatusServiceUnavailable,
+		// Cloudflare / Anthropic overload codes: the edge refused the request
+		// before it reached a worker.
+		529, 530:
+		return true
+	case http.StatusBadRequest,
+		http.StatusUnauthorized,
+		http.StatusForbidden,
+		http.StatusNotFound,
+		http.StatusMethodNotAllowed,
+		http.StatusRequestEntityTooLarge,
+		http.StatusUnsupportedMediaType,
+		http.StatusUnprocessableEntity:
+		return true
+	}
+	if includeAmbiguous && result.StatusCode >= 500 && result.StatusCode != http.StatusGatewayTimeout {
+		// The warned tier: the upstream answered, so it is not a lost
+		// connection — but a 500/502 can also arrive after the picture was
+		// generated and charged. The operator opted into that trade.
+		//
+		// 504 is carved out on purpose: it means "I gave up waiting", which is
+		// the strongest signal that the generation is still running.
+		return true
 	}
 	return false
 }

@@ -219,6 +219,15 @@ func (s *Service) recordAttempt(req Request, candidate domain.RoutingCandidate, 
 	if err != nil {
 		log.Printf("proxy: record attempt request_id=%s channel_id=%d attempt=%d: %v", req.RequestID, candidate.Channel.ID, attempt, err)
 	}
+	// Fold this request's earlier attempts into the row just written: the
+	// console lists one entry per request instead of one per channel tried, and
+	// reads the folded rows back as the failover chain. Best-effort — losing the
+	// merge costs a duplicate-looking list, not the request's record.
+	if err == nil {
+		if mergeErr := s.db.ProxyLog.MarkSuperseded(req.RequestID, logID); mergeErr != nil {
+			log.Printf("proxy: merge attempts request_id=%s keep_id=%d: %v", req.RequestID, logID, mergeErr)
+		}
+	}
 	result.AttemptLogID = logID
 	// Live-trace failover chain: finalize this round's entry so the console
 	// shows A✗ → B✗ → C instead of only the current channel.

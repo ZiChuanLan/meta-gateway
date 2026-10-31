@@ -326,6 +326,12 @@ func NewWithDependencies(cfg *config.Config, db *store.DB, enc *crypto.Encrypter
 	selector.SetSticky(stickyStore, cfg.StickyEnabled)
 	proxyService := proxy.New(selector, relay.NewWithClient(outboundClient), db, enc, cfg.RetryTimes, cfg.Cooldown)
 	proxyService.SetImageRelay(relay.NewWithClient(imageClient))
+	// Seed the deployment default; the runtime settings (images_failover_enabled
+	// and its warned images_failover_include_ambiguous tier) can override it
+	// later without a restart, so this is not the last word.
+	proxyService.SetImagesFailoverEnabled(cfg.ImagesFailoverEnabled)
+	proxyService.SetImagesFailoverIncludeAmbiguous(cfg.ImagesFailoverIncludeAmbiguous)
+	proxyService.SetImagesFailoverIncludeUncertain(cfg.ImagesFailoverIncludeUncertain)
 	proxyService.SetAdapterRegistry(registry)
 	proxyService.SetCredentialRefresher(checkinService)
 	proxyService.SetChannelRetryTimes(cfg.ChannelRetryTimes)

@@ -125,6 +125,21 @@ type Editable struct {
 	// ChannelRetryTimes is how many times the same upstream key is re-sent
 	// after a retryable failure before moving to the next key/channel (0-5).
 	ChannelRetryTimes int `json:"channel_retry_times"`
+	// ImagesFailoverEnabled lets an image write (images/edits,
+	// images/generations, variations) fail over. Off is the shipped contract:
+	// a billable generation must never be replayed. On, only the failures that
+	// provably preceded generation (429/503/529/530 and outright request
+	// rejections) are replayed; 5xx, 504 and timeouts still stop after one try.
+	ImagesFailoverEnabled bool `json:"images_failover_enabled"`
+	// ImagesFailoverIncludeAmbiguous is the warned tier of that hatch: also
+	// replay 5xx answers other than 504, which may arrive after the picture was
+	// generated and billed. Inert unless ImagesFailoverEnabled is on.
+	ImagesFailoverIncludeAmbiguous bool `json:"images_failover_include_ambiguous"`
+	// ImagesFailoverIncludeUncertain is the blunt tier: also replay 504,
+	// transport timeouts, dead streams and empty 2xx, i.e. every failure where
+	// the upstream may already hold a finished picture and a charge. Inert
+	// unless ImagesFailoverEnabled is on.
+	ImagesFailoverIncludeUncertain bool `json:"images_failover_include_uncertain"`
 	// UpdateCheckEnabled lets the gateway query GitHub for a newer release to
 	// power the console update badge. Off means no outbound calls at all.
 	UpdateCheckEnabled bool `json:"update_check_enabled"`
@@ -323,6 +338,9 @@ func New(cfg *config.Config, settingsStore *store.RuntimeSettingsStore, appliers
 		HealthSweepConcurrency:           cfg.HealthSweepConcurrency,
 		HealthSweepTimeoutSeconds:        cfg.HealthSweepTimeoutSeconds,
 		ChannelRetryTimes:                cfg.ChannelRetryTimes,
+		ImagesFailoverEnabled:            cfg.ImagesFailoverEnabled,
+		ImagesFailoverIncludeAmbiguous:   cfg.ImagesFailoverIncludeAmbiguous,
+		ImagesFailoverIncludeUncertain:   cfg.ImagesFailoverIncludeUncertain,
 		UpdateCheckEnabled:               cfg.UpdateCheckEnabled,
 		// No env knob: the bootstrap default for new channels is manual
 		// (discovery only fills the candidate snapshot until models are
@@ -487,6 +505,9 @@ func (c *Controller) Update(next Editable) (Snapshot, error) {
 		HealthSweepConcurrency:           next.HealthSweepConcurrency,
 		HealthSweepTimeoutSeconds:        next.HealthSweepTimeoutSeconds,
 		ChannelRetryTimes:                next.ChannelRetryTimes,
+		ImagesFailoverEnabled:            boolInt(next.ImagesFailoverEnabled),
+		ImagesFailoverIncludeAmbiguous:   boolInt(next.ImagesFailoverIncludeAmbiguous),
+		ImagesFailoverIncludeUncertain:   boolInt(next.ImagesFailoverIncludeUncertain),
 		UpdateCheckEnabled:               boolInt(next.UpdateCheckEnabled),
 		DefaultModelSyncMode:             next.DefaultModelSyncMode,
 		SiteProbeIntervalSeconds:         unsetIfZero(next.SiteProbeIntervalSeconds),
@@ -735,6 +756,14 @@ func (c *Controller) applyWithError(values Editable) error {
 	if c.appliers.SetChannelRetryTimes != nil {
 		c.appliers.SetChannelRetryTimes(values.ChannelRetryTimes)
 	}
+	// Image-write failover escape hatch. Off by default and hot-swappable: the
+	// proxy reads the flag on every request, so turning it off stops the very
+	// next image replay rather than the next restart.
+	if c.appliers.Proxy != nil {
+		c.appliers.Proxy.SetImagesFailoverEnabled(values.ImagesFailoverEnabled)
+		c.appliers.Proxy.SetImagesFailoverIncludeAmbiguous(values.ImagesFailoverIncludeAmbiguous)
+		c.appliers.Proxy.SetImagesFailoverIncludeUncertain(values.ImagesFailoverIncludeUncertain)
+	}
 	// External site-probe cadence hot reload. The loop re-reads this at every
 	// round, so a change lands on the next one rather than after a restart.
 	if c.appliers.SetSiteProbeSchedule != nil {
@@ -865,6 +894,9 @@ func rowToEditable(row *store.RuntimeSettingsRow) Editable {
 		HealthSweepConcurrency:            row.HealthSweepConcurrency,
 		HealthSweepTimeoutSeconds:         row.HealthSweepTimeoutSeconds,
 		ChannelRetryTimes:                 row.ChannelRetryTimes,
+		ImagesFailoverEnabled:             row.ImagesFailoverEnabled == 1,
+		ImagesFailoverIncludeAmbiguous:    row.ImagesFailoverIncludeAmbiguous == 1,
+		ImagesFailoverIncludeUncertain:    row.ImagesFailoverIncludeUncertain == 1,
 		UpdateCheckEnabled:                row.UpdateCheckEnabled == 1,
 		DefaultModelSyncMode:              row.DefaultModelSyncMode,
 		SiteProbeIntervalSeconds:          row.SiteProbeIntervalSeconds,
@@ -962,6 +994,15 @@ func (c *Controller) rowToEditableWithEnv(row *store.RuntimeSettingsRow) Editabl
 	}
 	if editable.ChannelRetryTimes < 0 {
 		editable.ChannelRetryTimes = c.env.ChannelRetryTimes
+	}
+	if !editable.ImagesFailoverEnabled && row.ImagesFailoverEnabled == -1 {
+		editable.ImagesFailoverEnabled = c.env.ImagesFailoverEnabled
+	}
+	if !editable.ImagesFailoverIncludeAmbiguous && row.ImagesFailoverIncludeAmbiguous == -1 {
+		editable.ImagesFailoverIncludeAmbiguous = c.env.ImagesFailoverIncludeAmbiguous
+	}
+	if !editable.ImagesFailoverIncludeUncertain && row.ImagesFailoverIncludeUncertain == -1 {
+		editable.ImagesFailoverIncludeUncertain = c.env.ImagesFailoverIncludeUncertain
 	}
 
 	if !editable.UpdateCheckEnabled && row.UpdateCheckEnabled == -1 {

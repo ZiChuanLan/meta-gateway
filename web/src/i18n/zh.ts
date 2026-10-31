@@ -1532,7 +1532,13 @@ export const zh: Dict = {
   "keys.accessCol": "用途",
   "logsPage.kicker": "可观测性",
   "logsPage.detailKicker": "代理尝试",
-  "logsPage.retried": "已重试",
+  "logsPage.failoverHops": "{n} 次尝试",
+  "logsPage.failoverTitle": "故障转移链路",
+  "logsPage.failoverCount": "{n} 跳",
+  "logsPage.failoverHop": "第 {n} 次",
+  "logsPage.failoverFinal": "最终采用",
+  "logsPage.failoverTruncated":
+    "尝试次数超出展示上限，中间若干跳已省略；原始记录仍按 request_id 全量保留。",
   "logsPage.slowOnly": "仅慢请求(≥5s)",
   "logsPage.timeWindow": "时间范围",
   "logsPage.memberDescription": "查看自己的请求、用量、费用与客户端信息。",
@@ -2875,6 +2881,19 @@ export const zh: Dict = {
   "ops.runtime.channelRetryTimes": "同渠道重发次数",
   "ops.runtime.channelRetryTimesHint":
     "可重试失败后，同一个上游 Key 重发几次，再换 Key、再换渠道（0 = 不重发）。网络抖动会继续跨渠道重试，不触发冷却或失败惩罚。",
+  "ops.runtime.imagesFailover": "图片请求允许故障转移",
+  "ops.runtime.imagesFailoverHint":
+    "默认关闭。打开后生图失败会自动换 Key、换渠道重试；基础范围只重放「上游还没开工就拒绝」的失败（429/503/529/530 与 4xx）。要不要连 5xx、超时一起重试，在打开时的确认框里勾选。环境变量：IMAGES_FAILOVER_ENABLED。",
+  "ops.runtime.imagesFailoverDialogTitle": "打开「图片请求允许故障转移」？",
+  "ops.runtime.imagesFailoverDialogIntro":
+    "打开后，生图失败会自动换 Key、换渠道重试。默认只重放「上游还没开工就拒绝」的失败（429/503/529/530 与 4xx）——这些重试不会多花钱。下面的选项会扩大重试范围，每扩大一档，重复扣费的风险就高一分：生图可能已被上游受理并计费，而图片没有用量回执，事后无法对账。",
+  "ops.runtime.imagesFailoverArmAmbiguous": "连 5xx 也重试",
+  "ops.runtime.imagesFailoverArmAmbiguousNote":
+    "上游回 500/502 等 5xx 时也换 Key、换渠道再画一次。这类错误可能是「已经画完并扣过费，只是回包失败」，可能为同一张图付两次钱。",
+  "ops.runtime.imagesFailoverArmUncertain": "连超时、504、断流也重试",
+  "ops.runtime.imagesFailoverArmUncertainNote":
+    "把 504、传输超时、断流、空响应也纳入重试，一直换到出图为止。这正是图最可能已经存在的情况，重复扣费的风险最高，适合「宁可多花钱也要出图」的场景。",
+  "ops.runtime.imagesFailoverArm": "按所选范围打开",
   "ops.runtime.cooldown": "固定冷却",
   "ops.runtime.cooldownHint":
     "429/5xx 等可重试上游状态触发的固定暂停。网络抖动不冷却、不累计失败。环境变量：COOLDOWN_SECONDS。",

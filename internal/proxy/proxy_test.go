@@ -382,11 +382,17 @@ func TestRetryFallsBackAndRecordsCooldown(t *testing.T) {
 		t.Fatalf("successful member should be healthy: %+v", low)
 	}
 	logs, err := db.ProxyLog.List(10)
-	if err != nil || len(logs) != 2 {
+	if err != nil || len(logs) != 1 {
 		t.Fatalf("logs=%+v err=%v", logs, err)
 	}
-	if logs[1].Status != http.StatusServiceUnavailable || logs[0].Status != http.StatusOK {
-		t.Fatalf("unexpected statuses: %+v", logs)
+	// One request reads as one row; the failed attempt lives on as the chain.
+	if logs[0].Status != http.StatusOK {
+		t.Fatalf("unexpected final status: %+v", logs[0])
+	}
+	if len(logs[0].Attempts) != 2 ||
+		logs[0].Attempts[0].Status != http.StatusServiceUnavailable ||
+		logs[0].Attempts[1].Status != http.StatusOK {
+		t.Fatalf("unexpected chain: %+v", logs[0].Attempts)
 	}
 }
 
@@ -694,28 +700,30 @@ func TestSameKeyResendCountsAreConfigurable(t *testing.T) {
 		t.Fatalf("failed channel must be cooled down after re-sends exhaust: %+v", high)
 	}
 	// The log has to say how many re-sends an attempt consumed, or the operator
-	// cannot tell whether CHANNEL_RETRY_TIMES ever rescues anything. Intermediate
-	// same-key failures are not separate rows (one row per channel attempt), so
-	// there are two: the busy channel gave up after its two re-sends (2), and the
-	// failover that finally worked was a first try (0). Newest first.
+	// cannot tell whether CHANNEL_RETRY_TIMES ever rescues anything. The chain
+	// keeps one hop per channel attempt: the busy channel gave up after its two
+	// re-sends (2), and the failover that finally worked was a first try (0).
 	logs, err := db.ProxyLog.List(10)
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}
-	rows := make([]domain.ProxyLog, 0, 2)
+	rows := make([]domain.ProxyLog, 0, 1)
 	for _, row := range logs {
 		if row.RequestID == "req-resend" {
 			rows = append(rows, row)
 		}
 	}
-	if len(rows) != 2 {
-		t.Fatalf("expected one log row per channel attempt, got %d (%+v)", len(rows), rows)
+	if len(rows) != 1 {
+		t.Fatalf("expected ONE log row for the request, got %d (%+v)", len(rows), rows)
 	}
-	if rows[0].KeyRetries != 0 || rows[0].Status != http.StatusOK {
-		t.Fatalf("the failover row should be a first-try success: %+v", rows[0])
+	if len(rows[0].Attempts) != 2 {
+		t.Fatalf("expected a two-hop chain, got %+v", rows[0].Attempts)
 	}
-	if rows[1].KeyRetries != 2 || rows[1].Status != http.StatusServiceUnavailable {
-		t.Fatalf("the exhausted row should record its two re-sends: %+v", rows[1])
+	if rows[0].Attempts[0].KeyRetries != 2 || rows[0].Attempts[0].Status != http.StatusServiceUnavailable {
+		t.Fatalf("the exhausted hop should record its two re-sends: %+v", rows[0].Attempts[0])
+	}
+	if rows[0].Attempts[1].KeyRetries != 0 || rows[0].Attempts[1].Status != http.StatusOK {
+		t.Fatalf("the failover hop should be a first-try success: %+v", rows[0].Attempts[1])
 	}
 }
 
@@ -876,11 +884,19 @@ func TestRetryExhaustionReturnsLastUpstreamResponse(t *testing.T) {
 		t.Fatalf("unexpected calls: %#v", upstream.calls)
 	}
 	logs, err := db.ProxyLog.List(10)
-	if err != nil || len(logs) != 2 {
+	if err != nil || len(logs) != 1 {
 		t.Fatalf("logs=%+v err=%v", logs, err)
 	}
-	if logs[0].Status != http.StatusGatewayTimeout || logs[0].Attempt != 2 || logs[1].Status != http.StatusGatewayTimeout || logs[1].Attempt != 1 {
-		t.Fatalf("unexpected logs: %+v", logs)
+	if logs[0].Status != http.StatusGatewayTimeout || logs[0].Attempt != 2 {
+		t.Fatalf("unexpected final row: %+v", logs[0])
+	}
+	// Both channels were tried; the walk reads as one chain now.
+	if len(logs[0].Attempts) != 2 ||
+		logs[0].Attempts[0].Status != http.StatusGatewayTimeout ||
+		logs[0].Attempts[0].Attempt != 1 ||
+		logs[0].Attempts[1].Status != http.StatusGatewayTimeout ||
+		logs[0].Attempts[1].Attempt != 2 {
+		t.Fatalf("unexpected chain: %+v", logs[0].Attempts)
 	}
 }
 

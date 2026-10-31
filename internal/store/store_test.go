@@ -190,7 +190,7 @@ func TestMigrationsAreTrackedAndIdempotent(t *testing.T) {
 	db := openTestDB(t)
 	// Keep this in step with the newest NNN_*.sql file: it is the tripwire that
 	// catches a migration that silently failed to apply (or applied twice).
-	const wantMigrations = 140
+	const wantMigrations = 144
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
 		t.Fatal(err)
@@ -1107,6 +1107,17 @@ func TestRuntimeSettingsHealthSweepUnsetFollowsEnv(t *testing.T) {
 	}
 	if got.KeyPoolRotation != -1 {
 		t.Fatalf("key_pool_rotation: unset column must read -1, got %d", got.KeyPoolRotation)
+	}
+	// The image-failover opt-in is off unless an operator says otherwise, so a
+	// row written before the column existed must not read as "on".
+	if got.ImagesFailoverEnabled != -1 {
+		t.Fatalf("images_failover_enabled: unset column must read -1, got %d", got.ImagesFailoverEnabled)
+	}
+	if got.ImagesFailoverIncludeAmbiguous != -1 {
+		t.Fatalf("images_failover_include_ambiguous: unset column must read -1, got %d", got.ImagesFailoverIncludeAmbiguous)
+	}
+	if got.ImagesFailoverIncludeUncertain != -1 {
+		t.Fatalf("images_failover_include_uncertain: unset column must read -1, got %d", got.ImagesFailoverIncludeUncertain)
 	}
 }
 

@@ -491,6 +491,41 @@ export interface ProxyLog {
    * member request list never receives it.
    */
   billing?: BillingExplanation[];
+  /**
+   * The request's failover chain, in the order the gateway walked it: one entry
+   * per upstream attempt, the last being the answer the client actually got.
+   * One row per request, so a failed-over request shows up once and this is how
+   * you read what happened before the answer.
+   */
+  attempts?: ProxyLogAttempt[];
+  /** True when the request made more attempts than the chain cap, and the
+   * middle hops were dropped (both ends are always kept). */
+  attempts_truncated?: boolean;
+}
+
+/**
+ * One hop of a request's failover chain — the channel/model tried, what it
+ * answered, and the error text if it failed. Derived from the attempt's own
+ * proxy_logs row, which is merged into the final one.
+ */
+export interface ProxyLogAttempt {
+  /** Raw proxy_logs row id of this hop. */
+  log_id: number;
+  /** Failover round (0 = first channel tried). */
+  attempt: number;
+  /** Which same-key re-send inside that round, if any. */
+  key_retries?: number;
+  channel_id: number;
+  model?: string;
+  upstream_model?: string;
+  status: number;
+  latency_ms: number;
+  error_brief?: string;
+  error_detail?: string;
+  upstream_url?: string;
+  created_at: string;
+  /** True for the hop whose answer the client received. */
+  final?: boolean;
 }
 export interface DiscoveredModel {
   id: number;
@@ -1308,6 +1343,26 @@ export interface RuntimeEditableSettings {
   health_sweep_concurrency: number;
   health_sweep_timeout_seconds: number;
   channel_retry_times: number;
+  /**
+   * Replay image writes (images/edits, images/generations, variations) across
+   * keys and channels. Off by default: a billable generation must never be
+   * replayed, because the first upstream may already have charged it. On, only
+   * failures that provably preceded generation are replayed (429/503/529/530
+   * and outright rejections); 5xx, 504 and timeouts still stop after one try.
+   */
+  images_failover_enabled: boolean;
+  /**
+   * The warned tier of that switch: also replay 5xx answers other than 504,
+   * which may arrive after the picture was generated and billed. Inert unless
+   * `images_failover_enabled` is on.
+   */
+  images_failover_include_ambiguous: boolean;
+  /**
+   * Blunt tier: replay 504, transport timeouts, dead streams and empty 2xx as
+   * well — every failure where the upstream may already hold a finished picture
+   * and a charge. Only meaningful while `images_failover_enabled` is on.
+   */
+  images_failover_include_uncertain: boolean;
   /** Gateway may query GitHub for newer releases to power the update badge. */
   update_check_enabled: boolean;
   /** Sync mode newly created channels inherit when the request omits it. */
