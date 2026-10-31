@@ -4,6 +4,16 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v4.7.7] - 2026-10-31
+
+### Fixed
+
+- **控制台不再把「已经被更晚版本超越的失败记录」报成上一次更新失败。** 决定一次更新任务是否结束时只看版本是否**恰好等于** target（`internal/selfupdate/journal.go`），而 `self-update-state.json` 跨容器存活：手工 `docker compose pull`、镜像被外部替换或侧车装上了比 target 更新的版本之后，那条 `failed` 永远清不掉——没有清除接口，版本比 target 新又会被 `ErrBadTarget` 挡回去，控制台于是长期显示「the previous update failed」，指向一次并不存在的故障。现在改判「当前版本不落后于 target」即视为结束（`targetReached`，复用 `updatecheck.IsNewer`）；不是 release tag 的构建（`dev`、`v4.6.2-5-g0a66577` 这类 git describe）仍然不算达成，原行为不变。
+
+### Tests
+
+- **补上跨版本收尾的回归测试。** `TestTargetReached` 以表驱动覆盖相等、被超越、beta 与两种不可比构建；`TestUpdateJournalIgnoresAFailureOvertakenByANewerBuild` / `TestUpdateJournalKeepsFailureForAnUnreachedTarget` 走 `NewWithDataDir` 的真实读取路径，断言被超越的 failed 转 idle 并清空错误文本、而真正没达到的 target 仍然报失败。
+
 ## [v4.7.6] - 2026-10-30
 
 ### Added
