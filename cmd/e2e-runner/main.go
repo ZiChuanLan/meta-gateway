@@ -249,6 +249,14 @@ func hasFailedAttempt(logs []map[string]any, channelID int64) bool {
 		if number(entry, "status") >= 400 && number(entry, "channel_id") == channelID {
 			return true
 		}
+		// A retried request's failure lives in its chain now: the surviving row
+		// carries the final (successful) answer, the broken channel's answer is
+		// one of the merged hops.
+		for _, hop := range attemptHops(entry) {
+			if number(hop, "status") >= 400 && number(hop, "channel_id") == channelID {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -340,14 +348,40 @@ func number(value map[string]any, key string) int64 {
 	}
 }
 
+// countAttempts counts logged upstream attempts across failover chains. Since
+// the one-row-per-request change the list returns a single row per request and
+// the per-channel hops ride along in attempts[], so a retried request
+// contributes its whole walk here instead of one row per channel.
 func countAttempts(logs []map[string]any, model string) int {
 	count := 0
 	for _, entry := range logs {
-		if entry["model"] == model {
-			count++
+		if entry["model"] != model {
+			continue
 		}
+		if hops := attemptHops(entry); len(hops) > 0 {
+			count += len(hops)
+			continue
+		}
+		count++
 	}
 	return count
+}
+
+// attemptHops returns a row's failover chain as untyped maps. Rows written
+// before the chain existed (or a single-attempt request that carries no array)
+// yield nil, and callers fall back to counting the row itself.
+func attemptHops(entry map[string]any) []map[string]any {
+	raw, ok := entry["attempts"].([]any)
+	if !ok {
+		return nil
+	}
+	hops := make([]map[string]any, 0, len(raw))
+	for _, hop := range raw {
+		if m, ok := hop.(map[string]any); ok {
+			hops = append(hops, m)
+		}
+	}
+	return hops
 }
 
 func manualMembersIntact(members []map[string]any, channelIDs ...int64) bool {
