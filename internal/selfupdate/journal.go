@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/lan/meta-gateway/internal/buildinfo"
+	"github.com/lan/meta-gateway/internal/updatecheck"
 )
 
 // The journal contains only task identity/state, never Docker config or logs.
@@ -51,7 +52,7 @@ func NewWithDataDir(socket, dataDir string) *Service {
 	if record.StartedAt > 0 {
 		s.started = time.UnixMilli(record.StartedAt)
 	}
-	if record.Target != "" && record.Target == buildinfo.Version {
+	if targetReached(record.Target, buildinfo.Version) {
 		s.phase = PhaseIdle
 	} else if record.Phase == PhaseFailed {
 		s.phase = PhaseFailed
@@ -62,6 +63,22 @@ func NewWithDataDir(socket, dataDir string) *Service {
 		s.expireLocked()
 	}
 	return s
+}
+
+// targetReached reports whether the running build already satisfies the
+// journal's target. A manual pull or the sidecar can install a release newer
+// than the one the journal named while this process was away; the old target
+// then says nothing about the outcome, and reporting it as a failure leaves a
+// prompt no retry can clear. Builds that are not release tags (dev, custom)
+// never count as reaching a target.
+func targetReached(target, current string) bool {
+	if target == "" {
+		return false
+	}
+	if target == current {
+		return true
+	}
+	return updatecheck.IsReleaseTag(current) && !updatecheck.IsNewer(target, current)
 }
 
 func (s *Service) persistLocked() error {
