@@ -4,6 +4,24 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v4.7.8] - 2026-11-01
+
+### Added
+
+- **图片写入可以按需开启故障转移，默认仍然关闭。** `/v1/images/edits`、`/v1/images/generations` 与 `variations` 原本是「一次到底」：不换 Key、不换渠道、不刷新凭据重放，429 / 529 / 504 都直接返回给客户端。理由是这类请求可能已被上游受理并计费，重放等于第二次扣费，而且图片没有用量回执，事后无法对账。新增开关 `IMAGES_FAILOVER_ENABLED`（默认 `false`）与控制台运行时设置项 `images_failover_enabled`（保存即时生效，无需重启），打开后**只重放「上游在生成前就拒绝」的失败**：429 / 503 / 529 / 530，以及被直接拒绝的请求（400 / 401 / 403 / 404 / 405 / 413 / 415 / 422）。500 / 502 / **504** / 其它 5xx / 传输超时 / 断流 / 2xx 空体仍然只发一次——这些才是「可能已经画完并扣过钱」的窗口。同一 Key 不会连撞两次，试调与健康探测流量不走该开关（`internal/proxy/proxy_forward.go`、`internal/runtimeconfig/runtimeconfig.go`、`internal/store/139_images_failover.sql`）。
+- **第二档「连 5xx 也重试」是单独的子开关，勾选前先确认。** 上面那一档救不了「上游回了 500/502」的情况，而 5xx 也可能发生在图已经生成并扣费之后。新增 `IMAGES_FAILOVER_INCLUDE_AMBIGUOUS`（默认 `false`，控制台 `images_failover_include_ambiguous`）+ 一个警告确认框，打开后把 5xx（**504 除外**）也纳入重放，等于明确拿「可能重复扣一次费」换「重试到出图为止」。这一档还专门给 5xx 开放了同一个 Key 的重发预算（沿用 `CHANNEL_RETRY_TIMES`，默认 1 次）——只有一个上游的部署没有别的 Key/渠道可走，不加这个预算开关等于没开；预算只对 5xx 生效，429/503 仍然直接换 Key、换渠道。504、传输超时、断流、2xx 空体在这一档下仍然只发一次（要放行请看第三档）；子开关在主开关关闭时不生效，关闭主开关会同时关掉它，重新打开需要再确认一次（`internal/store/140_images_failover_ambiguous.sql`）。
+- **开关可从控制台运维页热切换。** 「运行时设置 / 中继与故障转移」新增「图片请求允许故障转移」；环境变量只作为部署级默认值，Admin 保存的覆盖值写进 `runtime_settings`（NULL = 跟随环境变量），容器重启后仍然有效（`web/src/features/ops/RuntimeSettingsPanel.tsx`）。
+- **第三档「连超时、504、断流也重试」：不再判断失败是否安全。** 前两档仍然把 504 / 传输超时 / 断流 / 2xx 空体当作「图可能已经存在」的禁区。新增 `IMAGES_FAILOVER_INCLUDE_UNCERTAIN`（默认 `false`，控制台 `images_failover_include_uncertain`）+ 独立的警告确认框，打开后把这几类一并纳入重放：一直换 Key、换渠道到有结果为止，唯一停手条件是客户端已断开（本地适配器错误也不重发——那是网关自己的 bug，换渠道照样失败）。这一档同时把同一个 Key 的重发预算开到所有失败，不再只限 5xx。语义上这是**明确用「可能为同一张图付两次钱」换「一定出图」**，适合宁可多花钱也要出图的部署；子开关在主开关关闭时不生效，关闭主开关会同时关掉它（`internal/store/141_images_failover_uncertain.sql`）。
+- **一条请求一行日志：故障轮换过程合并进最终那行。** 此前一次请求轮换过 N 个渠道就出现 N 行日志，排查时得靠肉眼按 `request_id` 把顺序拼回来。现在每次上游尝试仍然各写一行原始 `proxy_logs`（审计、健康统计与计费回执的依据不变），但除最后一次外都会被 `merged_into` 指向该请求的最终行；列表只显示**每条请求一行**，并把之前的尝试按顺序作为 `attempts[]` 附在这一行上——渠道列下方有紧凑链路 `A 429 → B 502 → C ✓`，展开后是逐跳的渠道（可点击）、实际模型、状态码、耗时与**该跳上游返回的原始错误文本**，最后一跳标「最终采用」。口径随之对齐：`status` 是客户端实际收到的结果，「仅失败」筛出最终失败的请求；失败率与延迟直方图按**请求**计数（重试后成功不再同时贡献一条失败和一条成功）；全文检索**横跨整条链路**，搜中间某一跳报的错也能找到这条请求（FTS 与 LIKE 兜底一致）。CSV 导出会把整条链路导成一行。链路读取上限 20 跳（超出保留头尾并标注），原始明细行仍全量保留——单条日志无上限累积尝试明细曾在其他网关把单行撑到几百 MB，这里在读取层就封住（`internal/store/142_proxy_log_merge.sql`、`internal/store/proxylog.go`、`internal/proxy/proxy_health.go`、`web/src/features/Logs.tsx`）。
+
+### Tests
+
+- **「一条请求一行」的合并契约有存储层与代理层两层测试。** 存储层：三次尝试只返回一行、链路按顺序 429→502→200 且最后一跳标 `final`、失败率与直方图各计 1 次、无轮换的请求带单跳链路、全文检索能命中已合并跳的错误文本、45 次尝试被截断为头尾各 10 跳并标注（`internal/store/proxylog_merge_test.go`）。代理层：跨渠道重试、同 Key 重发耗尽后转移、重试彻底失败三个既有测试改为断言单行 + 链路（重发次数仍然逐跳可见）。
+
+- **把「哪些图片失败可以重放」写成三档白名单矩阵。** `TestRetrySafeRequestMatrix` 固定非幂等家族的判定；`TestImageFailureMayReplayMatrix` 对同一组回答分别断言安全档、5xx 档与最激进档的结果（500/502/507 在 5xx 档放行，504 / 408 / 超时 / 断流 / 空 2xx 只在最激进档放行，本地适配器错误三档都拒绝）。行为测试钉住 429 换 Key、429 换渠道、安全档下 504/500/502/409/超时/断流只发一次、5xx 档下 500/502/507 不再停手、5xx 档先在同 Key 重发再换渠道、最激进档对 504/超时/空 2xx 都会重发、429 仍然不重撞同一个 Key，以及各子档单独打开时不生效（`internal/proxy/retry_safety_test.go`）。
+- **控制台把三档合并成一个开关，范围在打开时的确认框里选。** 页面上只有「图片请求允许故障转移」一个勾选框：打开时弹出的确认框默认只启用最保守的第一档（只重放生成前的拒绝），框内两个可选扩展——「连 5xx 也重试」与「连超时、504、断流也重试」（勾选后者会自动带上前者）——按所选范围一次写入；关闭开关清掉整个范围，不会留下半开状态。环境变量的三档仍可独立设置，供想把档位固定在部署层的场景。
+- **控制台开关必须真的到达代理。** `TestImagesFailoverHotReloadsIntoProxy` 断言保存后 `proxy.Service` 读到新值、行里落成 `1`、重启后仍生效、清除覆盖后回到环境默认；前端测试断言打开开关先弹范围确认框、取消则不写入、确认后按所选范围 PUT，以及关闭开关会清掉整个范围。
+
 ## [v4.7.7] - 2026-10-31
 
 ### Fixed
