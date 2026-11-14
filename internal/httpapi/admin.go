@@ -167,7 +167,11 @@ func (h *AdminHandler) Register(r chi.Router) {
 	r.Get("/route-groups", h.listRouteGroupNames)
 	// Attach every channel that already serves the route's model ("add all").
 	r.Post("/routes/{id}/auto-match", h.autoMatchRouteMembers)
+	r.Post("/routes/{id}/auto-match", h.autoMatchRouteMembers)
 
+	// Aggregate models ("聚合模型") and shared console pins.
+	registerAggregateRoutes(r, h)
+	registerPinRoutes(r, h)
 	r.Get("/models/changes", h.listModelChanges)
 	r.Post("/models/changes/ignore", h.ignoreModelChanges)
 	r.Post("/models/changes/preview", h.previewModelChanges)

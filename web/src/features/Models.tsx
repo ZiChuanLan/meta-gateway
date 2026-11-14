@@ -4,6 +4,7 @@ import {
   RefreshCw,
   Combine,
   History,
+  Layers,
   Info,
   Plus,
   SlidersHorizontal,
@@ -177,6 +178,7 @@ function ModelsWorkspace({
     activeFilterCount,
     modelGroups,
     rows,
+    modelPins,
   } = filters;
   // The selected route and the members disclosure are the page's own (the URL and
   // the tab remember the first); the filter hook deliberately owns neither.
@@ -201,6 +203,7 @@ function ModelsWorkspace({
     setCapabilitiesOpen,
     setUnifyOpen,
     setUnifyHistoryOpen,
+    setAggregatesOpen,
     openChanges,
   } = tools;
   /** Route whose "attach every channel serving this model" preview is open. */
@@ -729,7 +732,16 @@ function ModelsWorkspace({
   };
 
   const modelActions = (route: Route, options?: { closeContext?: boolean }) =>
-    routeActions(route, modelActionDeps, options);
+    routeActions(
+      route,
+      {
+        ...modelActionDeps,
+        pinned: modelPins.pinnedRefs.has(String(route.id)),
+        pinToggle: modelPins.toggle,
+        pinLabel: (pinned: boolean) => (pinned ? t("modelsPage.unpin") : t("modelsPage.pin")),
+      },
+      options,
+    );
 
   const total = overviews.data?.length ?? 0;
   const enabledCount = (overviews.data ?? []).filter((o) => o.route.enabled).length;
@@ -890,6 +902,12 @@ function ModelsWorkspace({
               onSelect: () => setUnifyOpen(true),
             },
             {
+              key: "aggregates",
+              label: t("modelsPage.aggregates.action"),
+              icon: <Layers size={14} />,
+              onSelect: () => setAggregatesOpen(true),
+            },
+            {
               key: "history",
               label: t("modelsPage.unify.history.action"),
               icon: <History size={14} />,
@@ -960,6 +978,7 @@ function ModelsWorkspace({
             contextMenu={contextMenu}
             setContextMenu={setContextMenu}
             modelActions={modelActions}
+            modelPins={modelPins}
             pending={{ toggleRoute, del }}
             resetRouteDraft={() => save.reset()}
             startNewRoute={() => setEdit({ enabled: true })}

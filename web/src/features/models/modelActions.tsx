@@ -1,4 +1,13 @@
-import { ExternalLink, ListChecks, Pencil, Power, Shield, Sparkles, Trash2 } from "lucide-react";
+import {
+  ExternalLink,
+  ListChecks,
+  Pencil,
+  Pin,
+  Power,
+  Shield,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import type { ActionMenuItem } from "../../components/ActionMenu";
 import type { ModelMetadata, Route } from "../../api/types";
 
@@ -42,10 +51,20 @@ export type ModelActionDeps = {
     del: Mutation;
     save: Mutation;
   };
+  /** True when this route is currently pinned to the top of the directory. */
+  pinned?: boolean;
+  /** The shared console-pin toggle; absent when the pins query has not loaded. */
+  pinToggle?: {
+    isPending?: boolean;
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+    mutate: (...args: any[]) => unknown;
+  };
+  pinLabel?: (pinned: boolean) => string;
 };
 
 /** How each action is ranked into sections, and the section order. */
 const RANKS: Record<string, number> = {
+  pin: 0,
   try: 0,
   logs: 0,
   meta: 1,
@@ -67,90 +86,101 @@ export function modelActions(
   const close = () => {
     if (options?.closeContext) deps.setContextMenu(null);
   };
-  const items: ActionMenuItem[] = [
-    {
-      key: "bulk",
-      label: t("modelsPage.bulkMode"),
-      icon: <ListChecks size={14} />,
-      disabled: busy,
+  const items: ActionMenuItem[] = [];
+  if (deps.pinToggle && deps.pinLabel) {
+    items.push({
+      key: "pin",
+      label: deps.pinLabel(deps.pinned === true),
+      icon: <Pin size={14} />,
+      disabled: deps.pinToggle.isPending === true,
       onSelect: () => {
         close();
-        deps.setBulkMode(true);
-        deps.setBulkSelected((current) => new Set(current).add(route.id));
+        deps.pinToggle!.mutate({ ref: String(route.id), pin: deps.pinned !== true });
       },
+    });
+  }
+  items.push({
+    key: "bulk",
+    label: t("modelsPage.bulkMode"),
+    icon: <ListChecks size={14} />,
+    disabled: busy,
+    onSelect: () => {
+      close();
+      deps.setBulkMode(true);
+      deps.setBulkSelected((current) => new Set(current).add(route.id));
     },
-    {
-      key: "try",
-      label: t("try.open"),
-      icon: <Sparkles size={14} />,
-      disabled: busy,
-      onSelect: () => {
-        close();
-        deps.selectRow(route.id);
-        deps.setTryOpen(true);
-      },
+  });
+  items.push({
+    key: "try",
+    label: t("try.open"),
+    icon: <Sparkles size={14} />,
+    disabled: busy,
+    onSelect: () => {
+      close();
+      deps.selectRow(route.id);
+      deps.setTryOpen(true);
     },
-    {
-      key: "toggle",
-      label: route.enabled ? t("common.disableAction") : t("common.enableAction"),
-      icon: <Power size={14} />,
-      disabled: busy,
-      onSelect: () => {
-        close();
-        mutations.toggleRoute.mutate(route);
-      },
+  });
+  items.push({
+    key: "toggle",
+    label: route.enabled ? t("common.disableAction") : t("common.enableAction"),
+    icon: <Power size={14} />,
+    disabled: busy,
+    onSelect: () => {
+      close();
+      mutations.toggleRoute.mutate(route);
     },
-    {
-      key: "logs",
-      label: t("modelsPage.openLogs"),
-      icon: <ExternalLink size={14} />,
-      onSelect: () => {
-        close();
-        deps.navigate(`/logs?model=${encodeURIComponent(route.model_pattern)}`);
-      },
+  });
+  items.push({
+    key: "logs",
+    label: t("modelsPage.openLogs"),
+    icon: <ExternalLink size={14} />,
+    onSelect: () => {
+      close();
+      deps.navigate(`/logs?model=${encodeURIComponent(route.model_pattern)}`);
     },
-    {
-      key: "meta",
-      label: t("modelsPage.editMetadata"),
-      icon: <Shield size={14} />,
-      onSelect: () => {
-        close();
-        deps.setEditMeta(
-          deps.metaByModel.get(route.model_pattern) ?? {
-            model_name: route.model_pattern,
-            context_window: 0,
-            input_modalities: "",
-            output_modalities: "",
-            supports_thinking: -1,
-            vendor: "",
-            notes: "",
-          },
-        );
-      },
+  });
+  items.push({
+    key: "meta",
+    label: t("modelsPage.editMetadata"),
+    icon: <Shield size={14} />,
+    onSelect: () => {
+      close();
+      deps.setEditMeta(
+        deps.metaByModel.get(route.model_pattern) ?? {
+          model_name: route.model_pattern,
+          context_window: 0,
+          input_modalities: "",
+          output_modalities: "",
+          supports_thinking: -1,
+          vendor: "",
+          notes: "",
+        },
+      );
     },
-    {
-      key: "edit",
-      label: t("common.edit"),
-      icon: <Pencil size={14} />,
-      disabled: busy,
-      onSelect: () => {
-        close();
-        mutations.save.reset();
-        deps.setEdit(route);
-      },
+  });
+  items.push({
+    key: "edit",
+    label: t("common.edit"),
+    icon: <Pencil size={14} />,
+    disabled: busy,
+    onSelect: () => {
+      close();
+      mutations.save.reset();
+      deps.setEdit(route);
     },
-    {
-      key: "delete",
-      label: t("common.delete"),
-      icon: <Trash2 size={14} />,
-      danger: true,
-      disabled: busy,
-      onSelect: () => {
-        close();
-        deps.setRemove(route);
-      },
+  });
+  items.push({
+    key: "delete",
+    label: t("common.delete"),
+    icon: <Trash2 size={14} />,
+    danger: true,
+    disabled: busy,
+    onSelect: () => {
+      close();
+      deps.setRemove(route);
     },
-  ];
+  });
   return items
     .sort((a, b) => (RANKS[a.key] ?? 1) - (RANKS[b.key] ?? 1))
     .map((item) => ({

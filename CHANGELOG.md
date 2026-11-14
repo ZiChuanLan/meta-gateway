@@ -4,6 +4,19 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v4.8.0] - 2026-11-14
+
+### Added
+
+- **控制台顶置：连接页与模型目录都可以把常用的行钉在最上面。** 行右键菜单新增「顶置 / 取消顶置」，置顶行按置顶顺序排到列表最前（其余行保持原顺序），名称旁带一个小图钉标记。顶置列表存在服务端新表 `console_pins`（迁移 143），**所有管理员共享同一份顺序**——这是工作区状态，不是本机偏好；换浏览器、换电脑后顺序不变。端点：`GET /admin/console-pins`（按 kind 分组列出）、`POST /admin/console-pins`（`{kind, ref, pin}`，kind 目前为 `channel` / `model`；未知 kind 返回 400，重复顶置与取消都是幂等 no-op）。
+- **聚合模型：把几个已有模型收拢到一个新的公开模型名下。** 「模型工具」新增「聚合模型」弹窗：起一个新模型名（如 `hermes-model`），从模型目录勾选要收拢的模型（可展开每个勾选只挑部分渠道，不展开则带全部服务它的启用渠道），服务端把这些渠道挂成新路由的成员，且**每个成员都带显式 `{"real":"<被聚合的模型名>"}` 转发映射**——客户端调 `hermes-model`，各上游听到的仍然是自己的名字；**被聚合的原模型名全部保留**，照常可调用。成员的优先级/权重/故障转移/计费/团队配额全部走普通路由成员路径，无需新机制。列表随时可删：默认连路由一起删（该模型名停止可调用），`?with_route=false` 只删聚合记录、路由继续用；路由被普通路由编辑器删掉后聚合记录保留并显示「路由已删除」标记而非凭空消失。聚合名拒绝通配符（`*`/`?` 是匹配器不是可调用名），重名返回 409。端点：`GET/POST/PUT/DELETE /admin/model-aggregates`。实现刻意只加两张元数据表（`model_aggregates` + `console_pins`），路由与成员复用既有表——三个手写 channel 投影（`ListOverviews` / `RoutingCandidates` / `listOverviewCandidates`）因此零改动，不存在漏列回写风险。
+
+### Tests
+
+- 存储层：聚合记录生命周期（创建/重名拒绝/改名/路由链接清除/删除）、路由删除不连带删聚合记录、console_pins 的幂等增删与按 kind 列表（`internal/store/aggregates_test.go`）。
+- HTTP 层：端到端创建聚合（多渠道、同渠道双模型各带 `{"real":…}` 映射——钉住部分唯一索引 `(route_id, channel_id, group_name) WHERE mapping_json=''` 的约束）、重名 409、删除连路由 404、`with_route=false` 保留路由、console-pins 增删/未知 kind 400（`internal/httpapi/admin_aggregates_test.go`）。
+- 前端：`useConsolePins` 的置顶排序（置顶在前按序、未置顶保持原位）（`web/src/lib/useConsolePins.test.tsx`）。
+
 ## [v4.7.8] - 2026-11-01
 
 ### Added

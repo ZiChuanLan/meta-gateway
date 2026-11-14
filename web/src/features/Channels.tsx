@@ -28,6 +28,7 @@ import {
 import { channelActions, type ChannelActionDeps } from "./channels/channelActions";
 import { readChannelTab, writeChannelTab } from "./channels/tabState";
 import { useChannelFilters } from "./channels/useChannelFilters";
+import { useConsolePins } from "../lib/useConsolePins";
 import {
   credentialPatch as buildCredentialPatch,
   credentialShouldBeRemoved,
@@ -66,6 +67,8 @@ export function Channels() {
   // channels/useChannelBoard; local names are destructured to keep the rest of the
   // page reading as before.
   const board = useChannelBoard({ service, params, setParams });
+  // Shared "pin to top" list: server-side, so every admin sees the same order.
+  const channelPins = useConsolePins("channel");
   const {
     overviews,
     sites,
@@ -601,10 +604,11 @@ export function Channels() {
     },
     [typeFilter, groupFilter, healthFilter],
   );
+  const { sortByPin: sortChannelsByPin } = channelPins;
   const rows = useMemo(() => {
     const list = overviews.data ?? [];
     const term = query.trim().toLowerCase();
-    return list.filter((overview) => {
+    const filtered = list.filter((overview) => {
       const ch = overview.channel;
       if (!passesFilters(overview)) return false;
       if (!term) return true;
@@ -614,7 +618,10 @@ export function Channels() {
         ch.name.toLowerCase().includes(term) || base.includes(term) || String(ch.id).includes(term)
       );
     });
-  }, [overviews.data, query, siteById, passesFilters]);
+    // Pinned connections rise to the top (pin order), the rest keep their order.
+    // Pinned connections rise to the top (pin order), the rest keep their order.
+    return sortChannelsByPin(filtered, (overview) => String(overview.channel.id));
+  }, [overviews.data, query, siteById, passesFilters, sortChannelsByPin]);
 
   // The same term also searches MODELS, and that answer needs the catalog rather
   // than the loaded page: it arrives debounced and lands in its own group below
@@ -756,7 +763,17 @@ export function Channels() {
   const connectionActions = (
     overview: ChannelOverview,
     options?: { closeContext?: boolean },
-  ): ActionMenuItem[] => channelActions(overview, channelActionDeps, options);
+  ): ActionMenuItem[] =>
+    channelActions(
+      overview,
+      {
+        ...channelActionDeps,
+        pinned: channelPins.pinnedRefs.has(String(overview.channel.id)),
+        pinToggle: channelPins.toggle,
+        pinLabel: (pinned: boolean) => (pinned ? t("channels.unpin") : t("channels.pin")),
+      },
+      options,
+    );
 
   const openAdd = () => {
     createConnection.reset();
@@ -1012,6 +1029,7 @@ export function Channels() {
             healthFilter={healthFilter}
             setHealthFilter={setHealthFilter}
             overviews={overviews}
+            pinnedIds={channelPins.pinnedRefs}
             rows={rows}
             modelMatches={modelMatches}
             pageRows={pageRows}

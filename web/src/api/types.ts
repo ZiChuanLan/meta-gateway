@@ -1043,6 +1043,17 @@ export interface UnifyOp {
   undone: boolean;
 }
 
+/** One console aggregate model: a public name whose route fans out to several picked models. */
+export interface ModelAggregate {
+  id: number;
+  name: string;
+  route_id?: number;
+  note?: string;
+  created_at?: string;
+  updated_at?: string;
+  /** False when the route behind the aggregate was deleted through the route editor. */
+  route_alive?: boolean;
+}
 export interface ModelMetadata {
   id?: number;
   model_name: string;

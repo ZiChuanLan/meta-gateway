@@ -6,7 +6,7 @@
 引擎是 SQLite（WAL 模式），迁移脚本是 `internal/store/NNN_*.sql`，按文件名的数字序执行。
 本页由生成器**实际迁移一个临时数据库再读回 schema**得出，所以它反映的是代码最终产生的结构，而不是对 SQL 文本的解析结果。
 
-当前：`internal/store/` 下 **144** 个 `.sql` 文件，其中 **144** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
+当前：`internal/store/` 下 **145** 个 `.sql` 文件，其中 **145** 个已应用。两者不等是正常的——迁移历史上存在编号重复与退休：`026` / `027` / `028` 各有两个文件（按后缀安全排序），`060` 被 `067` 退休。
 
 ## 迁移铁律
 
@@ -26,7 +26,7 @@
 
 ## 表
 
-共 **65** 个表。
+共 **67** 个表。
 
 ### admin_totp · 4 列
 
@@ -217,6 +217,15 @@
 | `latency_ms` | INTEGER | 是 | 0 | — |
 | `ran_at` | TEXT | 是 | — | — |
 
+### console_pins · 4 列
+
+| 列 | 类型 | NOT NULL | 默认值 | 主键 |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | — | — | 是 |
+| `kind` | TEXT | 是 | — | — |
+| `ref` | TEXT | 是 | — | — |
+| `created_at` | TEXT | 是 | datetime('now') | — |
+
 ### credential_models · 3 列
 
 | 列 | 类型 | NOT NULL | 默认值 | 主键 |
@@ -361,6 +370,17 @@
 | `updated_at` | TEXT | 是 | — | — |
 | `quota_total_cost` | REAL | 是 | 0 | — |
 | `quota_used_cost` | REAL | 是 | 0 | — |
+
+### model_aggregates · 6 列
+
+| 列 | 类型 | NOT NULL | 默认值 | 主键 |
+| --- | --- | --- | --- | --- |
+| `id` | INTEGER | — | — | 是 |
+| `name` | TEXT | 是 | — | — |
+| `route_id` | INTEGER | — | — | — |
+| `note` | TEXT | 是 | '' | — |
+| `created_at` | TEXT | 是 | datetime('now') | — |
+| `updated_at` | TEXT | 是 | datetime('now') | — |
 
 ### model_capabilities · 16 列
 
@@ -1129,7 +1149,7 @@
 
 ## 索引
 
-共 **86** 个索引。
+共 **87** 个索引。
 
 | 索引 | 表 | 唯一 |
 | --- | --- | --- |
@@ -1163,6 +1183,7 @@
 | `finance_snapshots_channel` | `finance_snapshots` | — |
 | `idx_keepalive_events_channel` | `keepalive_events` | — |
 | `idx_keepalive_events_credential` | `keepalive_events` | — |
+| `idx_model_aggregates_name` | `model_aggregates` | 是 |
 | `idx_model_capabilities_kind` | `model_capabilities` | — |
 | `idx_model_changes_channel_status` | `model_changes` | — |
 | `idx_model_health_probed` | `model_health` | — |

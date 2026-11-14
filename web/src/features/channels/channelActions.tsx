@@ -4,6 +4,7 @@ import {
   ExternalLink,
   KeyRound,
   ListChecks,
+  Pin,
   PanelRightOpen,
   Pencil,
   Play,
@@ -48,6 +49,14 @@ type PendingMutation = {
   mutate: (...args: any[]) => unknown;
 };
 
+/** The pin toggle, as the menu sees it: pending covers the toggle's own in-flight state. */
+export type PinMutation = {
+  pendingId?: number | string | null | undefined;
+  isPending?: boolean;
+  /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  mutate: (...args: any[]) => unknown;
+};
+
 export type ChannelActionDeps = {
   t: Text;
   navigate: (to: string) => void;
@@ -62,6 +71,12 @@ export type ChannelActionDeps = {
   setCreateKeyChannel: (channel: Channel) => void;
   setRemove: (channel: Channel) => void;
   setInspectorOpen: (open: boolean) => void;
+  /** True when this channel is currently pinned to the top of the board. */
+  pinned?: boolean;
+  /** The shared console-pin toggle; absent when the pins query has not loaded. */
+  pinToggle?: PinMutation;
+  /** Pin/unpin label source: the board decides the wording (pinned vs not). */
+  pinLabel?: (pinned: boolean) => string;
   mutations: {
     refresh: PendingMutation;
     probe: PendingMutation;
@@ -80,6 +95,7 @@ export type ChannelActionDeps = {
 
 /** How each action is grouped, in the order the sections appear. */
 const RANKS: Record<string, number> = {
+  pin: 0,
   details: 0,
   models: 0,
   logs: 0,
@@ -320,6 +336,18 @@ export function channelActions(
       },
     },
   );
+  if (deps.pinToggle && deps.pinLabel) {
+    items.unshift({
+      key: "pin",
+      label: deps.pinLabel(deps.pinned === true),
+      icon: <Pin size={14} />,
+      disabled: deps.pinToggle.isPending === true,
+      onSelect: () => {
+        close();
+        deps.pinToggle!.mutate({ ref: String(ch.id), pin: deps.pinned !== true });
+      },
+    });
+  }
   items.unshift({
     key: "details",
     label: t("channels.details"),

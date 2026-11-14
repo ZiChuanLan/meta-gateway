@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ModelMetadata, RouteOverview } from "../../api/types";
 import { readScopedTabState, writeScopedTabState } from "../../lib/tabState";
+import { useConsolePins } from "../../lib/useConsolePins";
 import { countActiveModelFilters } from "./modelFilters";
 import { modelGroup } from "./modelGroups";
 
@@ -43,7 +44,10 @@ export type ModelFilterState = {
   /** Every group any route belongs to, for the filter's options. */
   modelGroups: string[];
   /** The rows that survive the filters. */
+  /** The rows that survive the filters. */
   rows: RouteOverview[];
+  /** Shared console-pin state for the "model" board. */
+  modelPins: ReturnType<typeof useConsolePins>;
 };
 
 export function useModelFilters({
@@ -91,9 +95,11 @@ export function useModelFilters({
     return [...groups].sort();
   }, [metaByModel, overviews]);
 
+  const modelPins = useConsolePins("model");
+  const { sortByPin: sortModelsByPin } = modelPins;
   const rows = useMemo(() => {
     const term = query.trim().toLowerCase();
-    return overviews.filter((item) => {
+    const filtered = overviews.filter((item) => {
       const meta = metaByModel.get(item.route.model_pattern);
       if (
         groupFilter &&
@@ -110,7 +116,10 @@ export function useModelFilters({
       if (item.route.model_pattern.toLowerCase().includes(term)) return true;
       return members.some((m) => m.channel.name.toLowerCase().includes(term));
     });
-  }, [channelFilter, groupFilter, metaByModel, overviews, query, statusFilter]);
+    // Pinned models rise to the top (pin order); the rest keep their order.
+    // Pinned models rise to the top (pin order); the rest keep their order.
+    return sortModelsByPin(filtered, (item) => String(item.route.id));
+  }, [channelFilter, groupFilter, metaByModel, overviews, query, statusFilter, sortModelsByPin]);
 
   // Pagination stays with the page: it is a presentation choice about the rows
   // this hook returns, not another fact about the filters.
@@ -132,5 +141,6 @@ export function useModelFilters({
     }),
     modelGroups,
     rows,
+    modelPins,
   };
 }

@@ -9,6 +9,7 @@ import { ListShell } from "../../components/ListShell";
 import { PaginationBar } from "../../components/PaginationBar";
 import { Button, DataTable, Panel } from "../../components/ui";
 import { ChannelStatusBadges } from "./badges";
+import { Pin } from "lucide-react";
 import { capabilityFlags } from "./helpers";
 import type { ConnectionHealthFilter } from "./helpers";
 
@@ -103,6 +104,8 @@ export type ChannelDirectoryProps = {
     options?: { closeContext?: boolean },
   ) => ActionMenuItem[];
   /* Row busy state comes from five mutations' pending ids. */
+  /** The ids currently pinned to the top (shared console pins). */
+  pinnedIds?: Set<string>;
   pending: {
     refresh: Pending;
     probe: Pending;
@@ -150,6 +153,7 @@ export function ChannelDirectory(props: ChannelDirectoryProps) {
     setContextMenu,
     contextMenu,
     connectionActions,
+    pinnedIds,
     pending,
   } = props;
   return (
@@ -359,6 +363,11 @@ export function ChannelDirectory(props: ChannelDirectoryProps) {
                     ) : null}
                     <td>
                       <strong>{ch.name}</strong>
+                      {pinnedIds?.has(String(ch.id)) ? (
+                        <span className="pin-chip" title={t("channels.pinnedBadge")}>
+                          <Pin size={12} />
+                        </span>
+                      ) : null}
                       {ch.group_name ? (
                         <span className="capability-chip is-group">{ch.group_name}</span>
                       ) : null}

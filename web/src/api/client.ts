@@ -79,6 +79,7 @@ import type {
   RouteMember,
   RouteOverview,
   ModelChannelMatch,
+  ModelAggregate,
   ModelMatchMode,
   RunResult,
   RunSummary,
@@ -843,6 +844,22 @@ export const api = (client: ApiClient) => ({
     client.post<{ status: string }>(`/admin/models/unify/batches/${id}/undo`),
   unifyRestoreRoute: (id: number) =>
     client.post<{ status: string }>(`/admin/models/unify/deleted/${id}/restore`),
+  // Aggregate models ("聚合模型"): one public name that fans out to the members
+  // of several picked models. Members are created server-side with explicit
+  // {"real": …} redirects, so every upstream still hears its own model name.
+  modelAggregates: (signal?: AbortSignal) =>
+    client.get<{ items: ModelAggregate[] }>("/admin/model-aggregates", signal),
+  createModelAggregate: (body: {
+    name: string;
+    note?: string;
+    members: { model: string; source_channel_ids?: number[] }[];
+  }) => client.post<ModelAggregate>("/admin/model-aggregates", body),
+  deleteModelAggregate: (id: number, withRoute = true) =>
+    client.delete(`/admin/model-aggregates/${id}?with_route=${withRoute}`),
+  consolePins: (signal?: AbortSignal) =>
+    client.get<Record<string, string[]>>("/admin/console-pins", signal),
+  setConsolePin: (kind: string, ref: string, pin: boolean) =>
+    client.post<{ status: string }>("/admin/console-pins", { kind, ref, pin }),
   probeChannel: (id: number) => client.post<ProbeResult>(`/admin/discovery/channels/${id}/probe`),
   /**
    * What an upstream would serve, from a base URL and key that are not stored

@@ -2,7 +2,7 @@ import type React from "react";
 import { Link } from "react-router-dom";
 import { useAvailability } from "../../hooks/useAvailability";
 import { AvailabilityIndicator } from "../../components/AvailabilityIndicator";
-import { Plus } from "lucide-react";
+import { Pin, Plus } from "lucide-react";
 import type { Channel, Route, RouteOverview } from "../../api/types";
 import { ActionMenu, type ActionMenuItem } from "../../components/ActionMenu";
 import { rowContextPoint, rowKeyboardContextPoint } from "../../components/contextMenu";
@@ -53,6 +53,8 @@ export type RouteDirectoryProps = {
   setStatusFilter: (value: "enabled" | "disabled" | "all") => void;
   modelGroups: string[];
   channels: Channel[];
+  /** Shared console-pin state for the "model" board (pin badges + menu wiring). */
+  modelPins?: ReturnType<typeof import("../../lib/useConsolePins").useConsolePins>;
   /* Data. */
   overviews: {
     isPending: boolean;
@@ -147,6 +149,7 @@ export function RouteDirectory(props: RouteDirectoryProps) {
     contextMenu,
     setContextMenu,
     modelActions,
+    modelPins,
     pending,
     resetRouteDraft,
     startNewRoute,
@@ -388,7 +391,11 @@ export function RouteDirectory(props: RouteDirectoryProps) {
                         {head ? head.channel.name : t("modelsPage.noUpstream")}
                       </small>
                     ),
-                    badges: item.route.image_edit_shim ? (
+                    badges: modelPins?.pinnedRefs.has(String(item.route.id)) ? (
+                      <span className="pin-chip" title={t("modelsPage.pinnedBadge")}>
+                        <Pin size={12} />
+                      </span>
+                    ) : item.route.image_edit_shim ? (
                       // Only meaningful on routes whose model has no images
                       // endpoint of its own, so it stays a hint rather than a
                       // status.

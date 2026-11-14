@@ -7,7 +7,7 @@
 鉴权：`Authorization: Bearer <session_token>`，由 `POST /admin/session` 换取。`/admin/session` 本身与少数公开入口除外。
 除特别说明外，请求与响应都是 JSON；请求体上限由 `MAX_ADMIN_BODY_BYTES` 约束。
 
-共 **252** 条注册、**204** 个路径、Delete、Get、Patch、Post、Put 方法。
+共 **259** 条注册、**207** 个路径、Delete、Get、Patch、Post、Put 方法。
 
 ## /admin/(root) · 1 条
 
@@ -128,6 +128,13 @@
 | 方法 | 路径 | handler |
 | --- | --- | --- |
 | `Get` | `/admin/console/` | — |
+
+## /admin/console-pins · 2 条
+
+| 方法 | 路径 | handler |
+| --- | --- | --- |
+| `Get` | `/admin/console-pins` | listPins |
+| `Post` | `/admin/console-pins` | setPin |
 
 ## /admin/credentials · 3 条
 
@@ -254,6 +261,15 @@
 | `Get` | `/admin/mode` | getMode |
 | `Patch` | `/admin/mode` | patchMode |
 | `Post` | `/admin/mode/owner` | bootstrap |
+
+## /admin/model-aggregates · 4 条
+
+| 方法 | 路径 | handler |
+| --- | --- | --- |
+| `Get` | `/admin/model-aggregates` | listAggregates |
+| `Post` | `/admin/model-aggregates` | createAggregate |
+| `Delete` | `/admin/model-aggregates/{id}` | deleteAggregate |
+| `Put` | `/admin/model-aggregates/{id}` | updateAggregate |
 
 ## /admin/model-blocks · 2 条
 
@@ -430,7 +446,7 @@
 | `Put` | `/admin/route-members/{id}` | updateRouteMember |
 | `Post` | `/admin/route-members/{id}/clear-health` | clearRouteMemberHealth |
 
-## /admin/routes · 13 条
+## /admin/routes · 14 条
 
 | 方法 | 路径 | handler |
 | --- | --- | --- |
@@ -441,6 +457,7 @@
 | `Delete` | `/admin/routes/{id}` | deleteRoute |
 | `Get` | `/admin/routes/{id}` | getRoute |
 | `Put` | `/admin/routes/{id}` | updateRoute |
+| `Post` | `/admin/routes/{id}/auto-match` | autoMatchRouteMembers |
 | `Post` | `/admin/routes/{id}/auto-match` | autoMatchRouteMembers |
 | `Post` | `/admin/routes/{routeId}/groups/copy` | copyRouteMemberGroup |
 | `Post` | `/admin/routes/{routeId}/groups/rename` | renameRouteMemberGroup |
