@@ -4,6 +4,18 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v4.8.1] - 2026-11-14
+
+### Fixed
+
+- **`413 body_too_large` 不再误报。** 中继读取请求体时曾把 `io.ReadAll` 的**任何**错误都判成体积超限，回 413 并念出配置里的上限（默认 256 MB）。真正触发它的是 `http.Server.ReadTimeout`：它覆盖整个请求读取（含 body），所以一个 100 KB 的请求在 1 KB/s 下 92 秒才传完时，早在 30 秒就被切断，客户端却收到「超过 256 MB」——把 `RELAY_MAX_BODY_MB` 从 64 调到 256 全程无效，因为阈值从来不是体积。现在只有 `*http.MaxBytesError` 回 413（行为不变，仍带上限与端点名），其余读取失败回 **408 `body_read_timeout`**，消息明确写「这不是体积限制」并指向 `SERVER_READ_TIMEOUT_SECONDS`，日志同样点名真实原因。三处读取点统一走 `rejectBodyRead`（`internal/httpapi/relay.go`、`internal/httpapi/relay_custom.go`）。
+- **`SERVER_READ_TIMEOUT_SECONDS` 默认 30 → 300。** 30 秒意味着 64 MB 的图片上传要 ≥2 MB/s 才不被切断，慢速链路上必然踩雷。头部停顿仍由 `SERVER_READ_HEADER_TIMEOUT_SECONDS`（10s）守着，所以放宽 body 读取时间不放松 slowloris 防护。`docker-compose.yml` 的 `:-30` 与 `.env.example` 同步改为 300。**已经部署的实例要显式改自己的 `.env`**（那里写着 30），否则 compose 会继续把 30 传进容器。
+- 控制台分类表新增 `body_read_timeout`（归 `network` 类：成因是上传链路，不是渠道配置），避免新分类落到通用兜底文案。
+
+### Tests
+
+- `TestRelayBodyReadTimeoutIsNotReportedAsTooLarge` 用「先给几个字节、再返回 `os.ErrDeadlineExceeded`」的 body 钉住三条：注册端点与 `/v1/*` 透传都回 408、类型为 `body_read_timeout`、消息里出现 `SERVER_READ_TIMEOUT_SECONDS` 且**不再**出现 `RELAY_MAX_BODY_MB`。既有的 413 测试保持通过，证明真超限没有被一起放过（`internal/httpapi/relay_body_limit_test.go`）。
+
 ## [v4.8.0] - 2026-11-14
 
 ### Added

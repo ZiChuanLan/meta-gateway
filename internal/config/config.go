@@ -470,7 +470,13 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	readTimeout, err := envDurationSeconds("SERVER_READ_TIMEOUT_SECONDS", 30, 1, 3600)
+	// ReadTimeout spans the whole request read (headers + body), so it is the
+	// ceiling on how slowly a client may upload. 30s was a trap: a 100 KB body
+	// at 1 KB/s tripped it, and the relay reported that as an over-limit body.
+	// 300s still bounds a stuck upload while leaving room for a large payload
+	// on a slow link; header stalls stay covered by
+	// SERVER_READ_HEADER_TIMEOUT_SECONDS.
+	readTimeout, err := envDurationSeconds("SERVER_READ_TIMEOUT_SECONDS", 300, 1, 3600)
 	if err != nil {
 		return nil, err
 	}

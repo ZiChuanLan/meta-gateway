@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,11 +16,11 @@ import (
 	"github.com/lan/meta-gateway/internal/store"
 )
 
-// setupRelayWithBodyLimits builds the standard relay wiring with explicit
+// setupRelayHandler builds the standard relay wiring with explicit
 // request-body ceilings, in whole megabytes (the unit the console speaks), so a
 // test can send a body that is over the limit without allocating tens of
 // megabytes.
-func setupRelayWithBodyLimits(t *testing.T, baseURL string, jsonMB, imageMB int64) (string, string) {
+func setupRelayHandler(t *testing.T, baseURL string, jsonMB, imageMB int64) (*httptest.Server, string) {
 	t.Helper()
 	dataDir := t.TempDir()
 	db, err := store.OpenTest(dataDir)
@@ -65,7 +66,14 @@ func setupRelayWithBodyLimits(t *testing.T, baseURL string, jsonMB, imageMB int6
 	json.Unmarshal(post(t, server.URL+"/admin/downstream-keys", map[string]any{
 		"name": "limit-key", "scopes": "relay,images",
 	}), &key)
-	return server.URL, key.Token
+	return server, key.Token
+}
+
+// setupRelayWithBodyLimits is the network-facing form of the wiring above.
+func setupRelayWithBodyLimits(t *testing.T, baseURL string, jsonMB, imageMB int64) (string, string) {
+	t.Helper()
+	server, token := setupRelayHandler(t, baseURL, jsonMB, imageMB)
+	return server.URL, token
 }
 
 // relayPost sends any body to any /v1 path with a downstream token.
@@ -146,5 +154,66 @@ func TestRelayBodyLimitIsConfiguredAndExplained(t *testing.T) {
 	}
 	if status != http.StatusOK {
 		t.Fatalf("image request status %d body %s, want 200 under its own limit", status, body)
+	}
+}
+
+// failingBody delivers a few bytes and then fails the way a body read does when
+// the server's ReadTimeout expires mid-upload (or the client hangs up).
+type failingBody struct{ sent bool }
+
+func (b *failingBody) Read(p []byte) (int, error) {
+	if !b.sent {
+		b.sent = true
+		return copy(p, `{"model":"gemini-2.5-flash"`), nil
+	}
+	return 0, os.ErrDeadlineExceeded
+}
+
+func (b *failingBody) Close() error { return nil }
+
+// A body that stops arriving is not an oversized body. The relay used to answer
+// every io.ReadAll error with 413 and the configured ceiling, so a 100 KB upload
+// at 1 KB/s — cut off by SERVER_READ_TIMEOUT_SECONDS — was reported as exceeding
+// a 256 MB limit, and the operator went looking for RELAY_MAX_BODY_MB.
+func TestRelayBodyReadTimeoutIsNotReportedAsTooLarge(t *testing.T) {
+	upstream := mockOpenAIUpstream(t)
+	defer upstream.Close()
+	server, token := setupRelayHandler(t, upstream.URL, 1, 2)
+	handler := server.Config.Handler
+
+	// The registered relay paths and the /v1/* passthrough read the body the
+	// same way, so both have to answer 408.
+	for _, path := range []string{"/v1/chat/completions", "/v1/some-custom/path"} {
+		req := httptest.NewRequest(http.MethodPost, path, &failingBody{})
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusRequestTimeout {
+			t.Fatalf("%s: status %d body %s, want 408", path, rec.Code, rec.Body.String())
+		}
+		var payload struct {
+			Error struct {
+				Type     string `json:"type"`
+				Message  string `json:"message"`
+				Endpoint string `json:"endpoint"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("%s: unmarshal %s: %v", path, rec.Body.String(), err)
+		}
+		if payload.Error.Type != "body_read_timeout" {
+			t.Errorf("%s: type = %q, want body_read_timeout", path, payload.Error.Type)
+		}
+		if payload.Error.Endpoint != path {
+			t.Errorf("%s: endpoint = %q, want the path that timed out", path, payload.Error.Endpoint)
+		}
+		if strings.Contains(payload.Error.Message, "RELAY_MAX_BODY_MB") {
+			t.Errorf("%s: message %q still points at the size knob", path, payload.Error.Message)
+		}
+		if !strings.Contains(payload.Error.Message, "SERVER_READ_TIMEOUT_SECONDS") {
+			t.Errorf("%s: message %q does not name the real cause", path, payload.Error.Message)
+		}
 	}
 }

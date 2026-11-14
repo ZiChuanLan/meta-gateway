@@ -142,6 +142,40 @@ func (h *RelayHandler) rejectTooLarge(w http.ResponseWriter, r *http.Request, li
 	})
 }
 
+// rejectBodyRead answers a body the gateway could not read, telling the two
+// failure modes apart. Only *http.MaxBytesError means the body really is over
+// the limit; every other error is time, not size — http.Server.ReadTimeout
+// (SERVER_READ_TIMEOUT_SECONDS) covers the whole request read, so a slow or
+// interrupted upload is cut off long before any byte ceiling. Answering 413
+// with the configured ceiling in that case sent operators to
+// RELAY_MAX_BODY_MB, a knob that cannot help: a 100 KB body at 1 KB/s was
+// reported as exceeding a 256 MB limit.
+func (h *RelayHandler) rejectBodyRead(w http.ResponseWriter, r *http.Request, limit int64, err error) {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		h.rejectTooLarge(w, r, limit)
+		return
+	}
+	h.rejectBodyReadTimeout(w, r, err)
+}
+
+// rejectBodyReadTimeout answers a body that never finished arriving. 408 is the
+// honest status (the server gave up waiting for a complete request message),
+// and the log line names the real cause so the next reader does not go looking
+// for a size limit.
+func (h *RelayHandler) rejectBodyReadTimeout(w http.ResponseWriter, r *http.Request, err error) {
+	log.Printf("relay: %s body read failed: %v (not an over-limit body — check SERVER_READ_TIMEOUT_SECONDS and the client's upload speed)", r.URL.Path, err)
+	writeJSON(w, http.StatusRequestTimeout, map[string]any{
+		"error": map[string]any{
+			"message": fmt.Sprintf(
+				"the request body for %s could not be read in time; this is not a size limit — raise SERVER_READ_TIMEOUT_SECONDS or send the body faster",
+				r.URL.Path),
+			"type":     "body_read_timeout",
+			"endpoint": r.URL.Path,
+		},
+	})
+}
+
 // humanBytes renders a limit the way an operator reads it ("32 MB").
 func humanBytes(bytes int64) string {
 	const mb = 1 << 20
@@ -520,7 +554,7 @@ func (h *RelayHandler) forwardPassthrough(w http.ResponseWriter, r *http.Request
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBytes))
 	if err != nil {
-		h.rejectTooLarge(w, r, maxBytes)
+		h.rejectBodyRead(w, r, maxBytes, err)
 		return
 	}
 	defer r.Body.Close()
@@ -787,7 +821,7 @@ func (h *RelayHandler) forwardModelRequest(w http.ResponseWriter, r *http.Reques
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.maxBodyBytes()))
 	if err != nil {
-		h.rejectTooLarge(w, r, h.maxBodyBytes())
+		h.rejectBodyRead(w, r, h.maxBodyBytes(), err)
 		return
 	}
 	defer r.Body.Close()

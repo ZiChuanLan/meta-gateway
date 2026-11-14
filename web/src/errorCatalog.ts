@@ -43,6 +43,12 @@ const CATEGORY_TO_CLASS: Record<string, ErrorClass> = {
   dns_failure: "network",
   tls_failure: "network",
   outbound_blocked: "network",
+  // The gateway gave up waiting for a request body (408, type
+  // body_read_timeout). That is time, not size: the relay used to answer every
+  // body-read failure as 413 body_too_large, which sent operators to
+  // RELAY_MAX_BODY_MB — a knob that cannot help a slow or interrupted upload.
+  // Classed as network because the cause is the upload path, not the channel.
+  body_read_timeout: "network",
 
   // — Authentication / authorization —
   unauthorized: "auth",

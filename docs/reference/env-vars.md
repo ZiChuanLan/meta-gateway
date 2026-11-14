@@ -86,7 +86,7 @@
 | `ROUTING_LATENCY_AWARE` | 布尔 | true | RoutingLatencyAware enables latency-weighted channel selection. |
 | `SERVER_IDLE_TIMEOUT_SECONDS` | 整数（秒） | 120 | — |
 | `SERVER_READ_HEADER_TIMEOUT_SECONDS` | 整数（秒） | 10 | — |
-| `SERVER_READ_TIMEOUT_SECONDS` | 整数（秒） | 30 | — |
+| `SERVER_READ_TIMEOUT_SECONDS` | 整数（秒） | 300 | — |
 | `SERVER_SHUTDOWN_TIMEOUT_SECONDS` | 整数（秒） | 15 | — |
 | `SITE_NEWS_INTERVAL_SECONDS` | 整数 | 300 | SiteNewsIntervalSeconds is the env bootstrap for the upstream notice-board reader (internal/sitenews; default 300 = 5 minutes). Same contract as the site-probe cadence next door — a hot-reloadable runtime setting — except that the console may also set it to 0, which turns the background reader off rather than falling back here. |
 | `SITE_PROBE_CATALOG_URL` | 字符串 | "" | SiteProbeCatalogURL is the third-party monitoring directory the scheduled third-party health snapshot is read from. Empty keeps the shipped default (siteprobe.DefaultCatalogURL). |

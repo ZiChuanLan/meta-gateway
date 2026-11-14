@@ -82,7 +82,7 @@ func (h *RelayHandler) customPath(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, h.maxBodyBytes()))
 	if err != nil {
-		h.rejectTooLarge(w, r, h.maxBodyBytes())
+		h.rejectBodyRead(w, r, h.maxBodyBytes(), err)
 		return
 	}
 	defer r.Body.Close()

@@ -30,7 +30,7 @@
 
 下表由 `web/src/errorCatalog.ts` 生成。它是跨服务层的分类总表——后端新产出一个分类而这里没有对应项时，控制台会把它渲染成通用兜底文案。
 
-共 **101** 个已知分类。
+共 **102** 个已知分类。
 
 | 分类 | 错误类 |
 | --- | --- |
@@ -42,6 +42,7 @@
 | `dns_failure` | `network` |
 | `tls_failure` | `network` |
 | `outbound_blocked` | `network` |
+| `body_read_timeout` | `network` |
 | `unauthorized` | `auth` |
 | `upstream_unauthorized` | `auth` |
 | `invalid_token` | `auth` |
