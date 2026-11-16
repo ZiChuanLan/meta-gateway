@@ -10,9 +10,18 @@ import (
 	"github.com/lan/meta-gateway/internal/domain"
 )
 
+// externalCheckinPlatform marks the site family the check-in page creates for
+// generic external check-in entries. Those sites never have a channel, so the
+// "last channel deleted ⇒ schedule off" rule must leave them alone.
+const externalCheckinPlatform = "external-checkin"
+
 // ChannelStore provides CRUD operations for channels.
 type ChannelStore struct {
 	db *sql.DB
+	// onCredentialsChanged is wired by DB: a channel delete can turn off a
+	// site's check-in schedule with a direct UPDATE, which the credential cache
+	// would otherwise keep serving as still enabled.
+	onCredentialsChanged func()
 }
 
 // channelSelectColumns is the one projection of a channel row: exactly the
@@ -454,22 +463,57 @@ func (s *ChannelStore) Update(c *domain.Channel) error {
 	return nil
 }
 
+// Delete removes a channel, and with it the site's check-in schedule when this
+// was the site's last channel.
+//
+// The credential a check-in runs with (and its cookie/token) lives on the site,
+// not on the channel, so deleting a connection used to leave checkin_enabled=1
+// behind: the daily job kept calling an upstream the operator had just removed
+// and the check-in page grew one transport failure per day, forever. A schedule
+// belongs to the connection, so the last channel leaving turns it off.
+//
+// Nothing else is deleted. The site, its credentials and its check-in history
+// stay, so re-adding a connection to the same base URL reuses them (site lookup
+// is by base URL) and the operator can switch the schedule back on from the
+// drawer — with the token still in place.
 func (s *ChannelStore) Delete(id int64) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return fmt.Errorf("channel delete begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
+	// Resolve the site before the row is gone: the check-in cleanup below is an
+	// UPDATE over that site's credentials.
+	var siteID sql.NullInt64
+	if err := tx.QueryRow(`SELECT site_id FROM channels WHERE id = ?`, id).Scan(&siteID); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("channel delete site: %w", err)
+	}
 	// Discovered models + route_members cascade via FK.
 	// Empty routes without remaining members are removed to avoid ghost models.
 	if _, err := tx.Exec(`DELETE FROM channels WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("channel delete: %w", err)
+	}
+	if siteID.Valid {
+		// Only when no channel remains (other channels keep the site's account
+		// in use) and never for the external check-in family, which has no
+		// channels by design. Reversible: checkin_enabled is a flag, and the
+		// credential itself is untouched.
+		if _, err := tx.Exec(`UPDATE credentials SET checkin_enabled = 0, updated_at = datetime('now')
+			WHERE site_id = ? AND checkin_enabled = 1
+			  AND NOT EXISTS (SELECT 1 FROM channels WHERE site_id = ?)
+			  AND EXISTS (SELECT 1 FROM sites WHERE id = ? AND platform <> ?)`,
+			siteID.Int64, siteID.Int64, siteID.Int64, externalCheckinPlatform); err != nil {
+			return fmt.Errorf("channel delete checkin cleanup: %w", err)
+		}
 	}
 	if _, err := tx.Exec(`DELETE FROM routes WHERE id NOT IN (SELECT DISTINCT route_id FROM route_members)`); err != nil {
 		return fmt.Errorf("channel delete empty routes: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("channel delete commit: %w", err)
+	}
+	if siteID.Valid && s.onCredentialsChanged != nil {
+		s.onCredentialsChanged()
 	}
 	return nil
 }

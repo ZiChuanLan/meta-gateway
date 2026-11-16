@@ -1045,7 +1045,8 @@ export const zh: Dict = {
   "channels.hideAdvanced": "隐藏高级选项",
   "channels.detailKicker": "上游连接",
   "channels.deleteTitle": "删除连接",
-  "channels.deleteMsg": "删除 {name}？其模型也会从网关移除。",
+  "channels.deleteMsg":
+    "删除 {name}？其模型也会从网关移除。若这是该站点的最后一条连接，自动签到会同时关闭（签到历史保留）。",
   "channels.createdAndSynced": "已保存 {name} 并拉取 {models} 个模型。",
   "channels.refreshResult": "连接 #{id}：拉取了 {models} 个模型。",
   "channels.probeResult": "连接 #{id}：测试通过，{models} 个模型，{latency} 毫秒。",

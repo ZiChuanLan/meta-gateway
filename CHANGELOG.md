@@ -4,6 +4,19 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
+## [v4.8.2] - 2026-11-16
+
+### Fixed
+
+- **删除连接后不再留下每天报错的自动签到任务。** 签到开关保存在站点凭据上，旧的连接删除逻辑只移除了渠道，留下的凭据仍会每天请求旧上游，持续产生「无法连接上游」错误。现在删除站点最后一条连接时，在同一事务中关闭该站点所有凭据的自动签到，并清理凭据缓存，避免后台任务继续读到旧开关；同站点仍有其它连接时保持签到设置不变。
+- **升级自动关闭已有的残留签到任务。** 迁移 144 将没有连接的普通站点的自动签到关闭，保留站点、凭据和签到历史；独立的 `external-checkin` 外部签到站点不受影响。重新添加连接不会自动恢复签到，需要操作员明确开启。
+- 控制台删除连接的确认提示补充自动签到关闭与历史保留说明，中英文同步更新。
+
+### Tests
+
+- 存储层覆盖最后一条连接删除、凭据缓存失效、同站点多个签到凭据、其它连接仍在使用、外部签到保护、失败时事务回滚、重新添加连接与升级迁移的历史保留（`internal/store/channel_checkin_test.go`）。
+- HTTP 工作流覆盖删除连接后批量签到不再请求旧上游、也不再新增签到日志（`internal/httpapi/checkin_integration_test.go`）。
+
 ## [v4.8.1] - 2026-11-14
 
 ### Fixed

@@ -106,7 +106,7 @@ func openWithMaxConns(dataDir string, maxOpenConns int, migrate bool) (*DB, erro
 		DB:              sqldb,
 		Site:            siteStore,
 		Credential:      credentialStore,
-		Channel:         &ChannelStore{db: sqldb},
+		Channel:         &ChannelStore{db: sqldb, onCredentialsChanged: credentialStore.ClearCache},
 		DiscoveredModel: &DiscoveredModelStore{db: sqldb, credential: credentialStore},
 		Route:           &RouteStore{db: sqldb},
 		RouteMember:     &RouteMemberStore{db: sqldb},

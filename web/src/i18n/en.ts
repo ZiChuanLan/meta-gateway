@@ -1126,7 +1126,8 @@ export const en: Dict = {
   "channels.hideAdvanced": "Hide advanced",
   "channels.detailKicker": "Upstream connection",
   "channels.deleteTitle": "Delete connection",
-  "channels.deleteMsg": "Delete {name}? Its models will be removed from the gateway.",
+  "channels.deleteMsg":
+    "Delete {name}? Its models will be removed from the gateway. If this is the site's last connection, scheduled check-in is turned off too (its history is kept).",
   "channels.createdAndSynced": "{name} saved and fetched {models} models.",
   "channels.refreshResult": "Connection #{id}: fetched {models} models.",
   "channels.probeResult": "Connection #{id}: test ok, {models} models, {latency} ms.",

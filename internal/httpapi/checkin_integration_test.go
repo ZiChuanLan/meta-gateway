@@ -156,6 +156,47 @@ func TestCheckinAdminWorkflow(t *testing.T) {
 	if status != http.StatusNotFound {
 		t.Fatalf("missing credential status=%d", status)
 	}
+
+	// Regression: deleting the last connection used to leave the site-scoped
+	// schedule enabled, and each batch kept calling the removed upstream.
+	status, raw = requestJSON(http.MethodPost, "/admin/channels", map[string]any{
+		"name": "checkin connection", "site_id": siteID, "credential_id": credentialID,
+		"status": "enabled",
+	}, true)
+	if status != http.StatusCreated {
+		t.Fatalf("create channel status=%d body=%s", status, raw)
+	}
+	var channel struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &channel); err != nil {
+		t.Fatal(err)
+	}
+	status, raw = requestJSON(http.MethodDelete, fmt.Sprintf("/admin/channels/%d", channel.ID), nil, true)
+	if status != http.StatusOK {
+		t.Fatalf("delete channel status=%d body=%s", status, raw)
+	}
+	gotAuth, gotUser = "", ""
+	status, raw = requestJSON(http.MethodPost, "/admin/checkin/run", nil, true)
+	if status != http.StatusOK {
+		t.Fatalf("batch after delete status=%d body=%s", status, raw)
+	}
+	var batch struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(raw, &batch); err != nil || len(batch.Items) != 0 {
+		t.Fatalf("deleted connection still included in batch: %s err=%v", raw, err)
+	}
+	if gotAuth != "" || gotUser != "" {
+		t.Fatal("batch called the removed connection's upstream")
+	}
+	status, raw = requestJSON(http.MethodGet, fmt.Sprintf("/admin/checkin/logs?credential_id=%d", credentialID), nil, true)
+	if status != http.StatusOK {
+		t.Fatalf("logs after delete status=%d body=%s", status, raw)
+	}
+	if err := json.Unmarshal(raw, &logs); err != nil || len(logs) != 2 {
+		t.Fatalf("history changed after deleted connection batch: %s err=%v", raw, err)
+	}
 }
 
 func TestExternalCheckinAdminWorkflow(t *testing.T) {
