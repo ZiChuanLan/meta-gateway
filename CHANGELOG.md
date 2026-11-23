@@ -4,8 +4,18 @@ All notable changes to Meta Gateway are documented here. Versions follow
 [SemVer](https://semver.org/); each entry lands together with its git tag and
 Docker image (`zichuanlan/meta-gateway:<version>`).
 
-## [v4.8.2] - 2026-11-16
+## [v4.8.3] - 2026-11-23
 
+### Fixed
+
+- **访问策略不再因为一条陈旧的成员授权而整份无法保存（#12）。** 策略里的 `member_ids` 存的是 `route_members.id`，成员被删掉后（删路由、渠道解绑、删成员分组、GC 清掉孤儿成员）这些 id 就悬空了。对话框的候选列表只从 `route_members` 查，悬空 id 因此**没有对应的复选框**，可它仍在提交的 `member_ids` 里；`savePolicy` 逐个校验存在性，于是「什么都没改，点保存」也回 `invalid_members`，而且无法指出是哪一个。现在读取策略时就过滤掉不再存在的授权（`liveMemberIDs`），保存时同样剪枝而非拒绝——被删的成员本来就无从路由，剪掉不损失任何可达渠道；参数类错误仍回 `invalid_policy`。
+- 策略列表的「候选」计数与编辑抽屉的勾选状态因此只反映真实可用的成员，不会再出现「显示 N 个、却只勾得上 N-1 个」。
+
+### Tests
+
+- `TestTeamPolicyDropsGrantedMembersThatWereDeleted`：授权一个成员 → 删除该成员 → `GET /admin/team/policies` 不再返回该 id → 原样重发旧 id 的 `PUT` 返回 200，且库里 `members_json` 落成 `[]`（`internal/httpapi/team_integration_test.go`）。
+
+## [v4.8.2] - 2026-11-16
 ### Fixed
 
 - **删除连接后不再留下每天报错的自动签到任务。** 签到开关保存在站点凭据上，旧的连接删除逻辑只移除了渠道，留下的凭据仍会每天请求旧上游，持续产生「无法连接上游」错误。现在删除站点最后一条连接时，在同一事务中关闭该站点所有凭据的自动签到，并清理凭据缓存，避免后台任务继续读到旧开关；同站点仍有其它连接时保持签到设置不变。

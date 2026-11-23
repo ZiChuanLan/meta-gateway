@@ -497,3 +497,52 @@ func TestTeamLegacyPersonalKeyRemainsIndependent(t *testing.T) {
 		t.Fatal("session cookie missing protections")
 	}
 }
+
+// TestTeamPolicyDropsGrantedMembersThatWereDeleted: a grant whose route member
+// was deleted is inert, but keeping it made the whole policy unsavable — the
+// console re-submitted the stored ids and the server answered invalid_members,
+// with no checkbox to point at the ghost id (issue #12).
+func TestTeamPolicyDropsGrantedMembersThatWereDeleted(t *testing.T) {
+	e := newTeamTestEnv(t)
+	e.enable()
+	site, err := e.db.Site.Create(&domain.Site{Name: "Upstream", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel, err := e.db.Channel.Create(&domain.Channel{SiteID: &site, Name: "A", BaseURL: "http://127.0.0.1:9", TypeHint: "openai", Status: domain.StatusEnabled})
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := e.db.Route.Create(&domain.Route{ModelPattern: "grant-model", Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := e.db.RouteMember.Create(&domain.RouteMember{RouteID: route, ChannelID: channel, Priority: 10, Weight: 100, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := func(ids []int64) TeamPolicy {
+		return TeamPolicy{ID: 1, Name: "Granted", Models: []string{"grant-model"}, MemberIDs: ids, MaxKeys: 5, RPM: 60}
+	}
+	e.admin("PUT", "/admin/team/policies/1", policy([]int64{member}), 200)
+	if err := e.db.RouteMember.Delete(member); err != nil {
+		t.Fatal(err)
+	}
+
+	var policies []TeamPolicy
+	if err := json.Unmarshal(e.admin("GET", "/admin/team/policies", nil, 200), &policies); err != nil {
+		t.Fatal(err)
+	}
+	if len(policies) != 1 || len(policies[0].MemberIDs) != 0 {
+		t.Fatalf("deleted grant still reported: %+v", policies)
+	}
+	// Re-submitting the stale id (an old tab, a retry) must not fail either.
+	e.admin("PUT", "/admin/team/policies/1", policy([]int64{member}), 200)
+	var stored TeamPolicy
+	if err := e.db.QueryRow(`SELECT members_json FROM team_policies WHERE id=1`).Scan(&stored.Name); err != nil {
+		t.Fatal(err)
+	}
+	if stored.Name != "[]" {
+		t.Fatalf("stale grant persisted: %s", stored.Name)
+	}
+}

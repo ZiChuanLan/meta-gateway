@@ -8,6 +8,46 @@ import (
 	"time"
 )
 
+// liveMemberIDs keeps the grants that still resolve to a route member, in the
+// operator's order, dropping duplicates and non-positive ids.
+//
+// A grant whose member was deleted (route removed, channel unbound, group
+// deleted, GC swept an orphan) authorizes nothing: there is no member left to
+// reach. Keeping it also made the policy unsavable — savePolicy required every
+// stored id to still exist, so the console re-submitting an untouched policy
+// failed with invalid_members and had no way to point at the culprit, because
+// the ghost id has no checkbox in the candidate list. Pruning is lossless.
+func (h *TeamHandler) liveMemberIDs(ids []int64) ([]int64, error) {
+	live := []int64{}
+	if len(ids) == 0 {
+		return live, nil
+	}
+	rows, err := h.db.Query(`SELECT id FROM route_members`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	exists := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		exists[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	seen := map[int64]bool{}
+	for _, id := range ids {
+		if id <= 0 || seen[id] || !exists[id] {
+			continue
+		}
+		seen[id] = true
+		live = append(live, id)
+	}
+	return live, nil
+}
 func (h *TeamHandler) policy(id int64) (TeamPolicy, error) {
 	var p TeamPolicy
 	var models, members string
@@ -18,6 +58,12 @@ func (h *TeamHandler) policy(id int64) (TeamPolicy, error) {
 	}
 	if err == nil {
 		err = json.Unmarshal([]byte(members), &p.MemberIDs)
+	}
+	// Grants that no longer resolve are invisible in the console anyway; reporting
+	// them would make every policy read carry ids the operator cannot see, edit,
+	// or save.
+	if err == nil {
+		p.MemberIDs, err = h.liveMemberIDs(p.MemberIDs)
 	}
 	if p.Models == nil {
 		p.Models = []string{}
@@ -74,15 +120,12 @@ func (h *TeamHandler) savePolicy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	seen := map[int64]bool{}
-	for _, id := range p.MemberIDs {
-		var count int
-		if id <= 0 || seen[id] || h.db.QueryRow(`SELECT count(*) FROM route_members WHERE id=?`, id).Scan(&count) != nil || count != 1 {
-			teamFail(w, 400, "invalid_members")
-			return
-		}
-		seen[id] = true
+	members, err := h.liveMemberIDs(p.MemberIDs)
+	if err != nil {
+		teamFail(w, 500, "load_failed")
+		return
 	}
+	p.MemberIDs = members
 	if p.Models == nil {
 		p.Models = []string{}
 	}
@@ -90,16 +133,15 @@ func (h *TeamHandler) savePolicy(w http.ResponseWriter, r *http.Request) {
 		p.MemberIDs = []int64{}
 	}
 	models, _ := json.Marshal(p.Models)
-	members, _ := json.Marshal(p.MemberIDs)
+	granted, _ := json.Marshal(p.MemberIDs)
 	id := int64(0)
-	var err error
 	if raw := chiParam(r, "id"); raw != "" {
 		id, err = strconv.ParseInt(raw, 10, 64)
 		if err != nil || id <= 0 {
 			teamFail(w, 400, "invalid_id")
 			return
 		}
-		res, e := h.db.Exec(`UPDATE team_policies SET name=?,models_json=?,members_json=?,all_models=?,max_keys=?,rpm=?,allow_routing=?,allow_request_preferences=? WHERE id=?`, p.Name, string(models), string(members), p.AllModels, p.MaxKeys, p.RPM, p.AllowRouting, p.AllowRequestPreferences, id)
+		res, e := h.db.Exec(`UPDATE team_policies SET name=?,models_json=?,members_json=?,all_models=?,max_keys=?,rpm=?,allow_routing=?,allow_request_preferences=? WHERE id=?`, p.Name, string(models), string(granted), p.AllModels, p.MaxKeys, p.RPM, p.AllowRouting, p.AllowRequestPreferences, id)
 		err = e
 		if e == nil {
 			n, _ := res.RowsAffected()
@@ -109,7 +151,7 @@ func (h *TeamHandler) savePolicy(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		res, e := h.db.Exec(`INSERT INTO team_policies(name,models_json,members_json,all_models,max_keys,rpm,allow_routing,allow_request_preferences) VALUES(?,?,?,?,?,?,?,?)`, p.Name, string(models), string(members), p.AllModels, p.MaxKeys, p.RPM, p.AllowRouting, p.AllowRequestPreferences)
+		res, e := h.db.Exec(`INSERT INTO team_policies(name,models_json,members_json,all_models,max_keys,rpm,allow_routing,allow_request_preferences) VALUES(?,?,?,?,?,?,?,?)`, p.Name, string(models), string(granted), p.AllModels, p.MaxKeys, p.RPM, p.AllowRouting, p.AllowRequestPreferences)
 		err = e
 		if e == nil {
 			id, _ = res.LastInsertId()
